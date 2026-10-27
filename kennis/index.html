@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Algemene kennis · Slimspel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Andika:wght@400;700&family=Fredoka:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="../css/site.css">
+<style>
+/* Page-specific styles for the quiz */
+.label{font-family:var(--f-display);font-weight:600;margin-top:22px}
+.cards{margin-top:10px}
+button.card{text-align:left;font:inherit;color:inherit;cursor:pointer}
+button.card:hover{border-color:var(--ink);transform:translateY(-2px)}
+.card.mix{border-color:var(--ink)}
+.card .count{font-size:13px;color:var(--muted)}
+
+/* Play screen */
+.bar{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.cat{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.question{font-family:var(--f-display);font-weight:600;font-size:clamp(22px,4.5vw,28px);line-height:1.35;margin:6px 0 18px;text-wrap:balance}
+.options{display:grid;gap:10px}
+.opt{display:flex;align-items:center;gap:12px;text-align:left;background:var(--card);border:2px solid var(--line);border-radius:12px;padding:12px 14px;font-size:18px}
+.opt:hover:not(:disabled){border-color:var(--ink)}
+.opt .key{flex:none;width:30px;height:30px;border-radius:8px;background:var(--paper);display:grid;place-items:center;font-family:var(--f-display);font-weight:700;font-size:15px}
+.opt:disabled{cursor:default}
+.opt.right{border-color:var(--good);background:var(--good-bg);color:var(--good);font-weight:700}
+.opt.wrong{border-color:var(--bad);background:var(--bad-bg);color:var(--bad)}
+.opt.dim{opacity:.5}
+.fact{margin-top:16px;border-left:5px solid var(--accent);background:var(--paper);border-radius:0 12px 12px 0;padding:12px 14px}
+.fact b{font-family:var(--f-display)}
+.fact p{margin:4px 0 0}
+.next{margin-top:16px;display:flex;justify-content:flex-end}
+
+/* Results screen */
+.big{font-family:var(--f-display);font-weight:700;font-size:clamp(40px,10vw,60px);line-height:1.1}
+.review{list-style:none;padding:0;margin:10px 0 0;display:grid;gap:8px}
+.review li{background:var(--paper);border-radius:10px;padding:10px 12px}
+.review .ans{color:var(--good);font-weight:700}
+</style>
+</head>
+<body>
+<!-- Covers the page until js/core.js has checked the login (see index.html of the site) -->
+<div id="gate"><div class="gc"><p>Laden…</p></div></div>
+<script>
+setTimeout(() => {
+  if (window.__slimReady) return;
+  document.querySelector("#gate .gc").innerHTML =
+    "<h2>Laden lukt niet</h2><p>Ververs de pagina. Gaat het nog steeds mis? Vraag het aan Zana.</p>";
+}, 10000);
+</script>
+<main class="wrap">
+  <div class="top">
+    <a class="back" href="../">← Slimspel</a>
+    <span id="user"></span>
+  </div>
+
+  <!-- Screen 1: choose a category -->
+  <section id="setup">
+    <h1>Algemene <mark>kennis</mark></h1>
+    <p class="sub">Kies een onderwerp. Elke ronde heeft 10 vragen.</p>
+    <div class="cards" id="cats"></div>
+  </section>
+
+  <!-- Screen 2: one question at a time -->
+  <section id="play" hidden>
+    <div class="bar">
+      <span class="chip" id="counter"></span>
+      <span class="chip" id="score">0 goed</span>
+    </div>
+    <div class="progress"><span id="progress"></span></div>
+    <div class="panel" id="qpanel">
+      <div class="cat" id="qcat"></div>
+      <div class="question" id="question"></div>
+      <div class="options" id="options"></div>
+      <div class="fact" id="fact" hidden><b id="factTitle"></b><p id="factText"></p></div>
+      <div class="next" id="nextBox" hidden><button class="btn primary" id="next">Volgende →</button></div>
+    </div>
+  </section>
+
+  <!-- Screen 3: results -->
+  <section id="done" hidden>
+    <div class="panel">
+      <div class="big" id="result"></div>
+      <p class="sub" id="resultText"></p>
+      <div id="reviewBox" hidden>
+        <div class="label">Deze waren nog lastig</div>
+        <ul class="review" id="review"></ul>
+      </div>
+    </div>
+    <div class="row" style="margin-top:16px">
+      <button class="btn primary" id="again">Nog een ronde</button>
+      <button class="btn" id="change">Ander onderwerp</button>
+    </div>
+  </section>
+</main>
+
+<script type="module">
+import { gate, userBox, saveAttempt, loadAttempts, shuffle, flash, esc } from "../js/core.js";
+
+const MODULE = "slimspel-kennis"; // id in attempts, admin statistics and the weekly mail
+const ROUND = 10;                 // questions per round
+const KEYS = ["A", "B", "C", "D"];
+const $ = id => document.getElementById(id);
+
+const { user, profile } = await gate({ seen: MODULE });
+$("user").innerHTML = userBox(user, profile);
+
+// Question bank (separate file, so questions can be added without touching the code)
+const bank = await fetch("vragen.json", { cache: "no-cache" }).then(r => r.json());
+const catById = Object.fromEntries(bank.categories.map(c => [c.id, c]));
+const all = bank.categories.flatMap(c => bank.questions[c.id].map(q => ({ ...q, cat: c.id })));
+
+// What happened to each question before: newest answer wins.
+// Used to bring back questions he got wrong, and to show new ones before old ones.
+let lastResult = {}; // qid -> true (right) / false (wrong)
+loadAttempts(user.uid, MODULE).then(list => {
+  // list is newest first, so walk it backwards and let newer answers overwrite older ones
+  for (const a of list.slice().reverse()) for (const an of a.answers || []) lastResult[an.qid] = an.correct;
+}).catch(() => {}); // if this fails he can still play; the order is just random
+
+let state = null;
+
+// ---------- Screen 1: categories ----------
+function drawCats() {
+  const mix = `<button class="card mix" data-cat="alles"><span class="ico">?</span><h3>Alles door elkaar</h3>
+    <p>Vragen uit alle onderwerpen.</p><span class="count">${all.length} vragen</span></button>`;
+  $("cats").innerHTML = mix + bank.categories.map(c => `<button class="card" data-cat="${c.id}">
+    <span class="ico">${esc(c.icon)}</span><h3>${esc(c.title)}</h3><p>${esc(c.desc)}</p>
+    <span class="count">${bank.questions[c.id].length} vragen</span></button>`).join("");
+  $("cats").querySelectorAll("[data-cat]").forEach(b => b.onclick = () => start(b.dataset.cat));
+}
+
+// ---------- Choosing the 10 questions ----------
+// Weighted draw without putting back: last answer wrong = 4x as likely,
+// never seen = 2x, answered right before = 1x. So mistakes come back, but not every time.
+function pick(pool, n) {
+  const items = pool.map(q => ({ q, w: lastResult[q.id] === false ? 4 : lastResult[q.id] === true ? 1 : 2 }));
+  const out = [];
+  while (out.length < n && items.length) {
+    let r = Math.random() * items.reduce((s, x) => s + x.w, 0);
+    const i = items.findIndex(x => (r -= x.w) < 0);
+    out.push(items.splice(i === -1 ? items.length - 1 : i, 1)[0].q);
+  }
+  return out;
+}
+
+function show(screen) { ["setup", "play", "done"].forEach(s => $(s).hidden = s !== screen); }
+
+function start(cat) {
+  const pool = cat === "alles" ? all : all.filter(q => q.cat === cat);
+  state = { cat, list: pick(pool, ROUND), i: -1, good: 0, log: [], startedAt: new Date(), answered: false };
+  show("play");
+  next();
+}
+
+// ---------- Screen 2: one question ----------
+function next() {
+  state.i++;
+  if (state.i >= state.list.length) return finish();
+  const q = state.list[state.i];
+  state.answered = false;
+  // The right answer is mixed in with the three wrong ones at a random place
+  state.options = shuffle([q.a, ...q.o]);
+  $("counter").textContent = `Vraag ${state.i + 1} van ${state.list.length}`;
+  $("progress").style.width = (state.i / state.list.length * 100) + "%";
+  $("score").textContent = state.good + " goed";
+  $("qcat").textContent = catById[q.cat].title;
+  $("question").textContent = q.q;
+  $("options").innerHTML = state.options.map((o, k) =>
+    `<button class="opt" data-k="${k}"><span class="key">${KEYS[k]}</span><span>${esc(o)}</span></button>`).join("");
+  $("options").querySelectorAll(".opt").forEach(b => b.onclick = () => answer(Number(b.dataset.k)));
+  $("fact").hidden = true;
+  $("nextBox").hidden = true;
+}
+
+function answer(k) {
+  if (state.answered) return;
+  state.answered = true;
+  const q = state.list[state.i];
+  const chosen = state.options[k];
+  const ok = chosen === q.a;
+  if (ok) state.good++;
+  // Same answer shape as nl-oefenbank, so the admin "hardest questions" list picks it up
+  state.log.push({ qid: q.id, chosen, correct: ok });
+
+  // Colour the buttons: right answer green, his wrong choice red, the rest faded
+  $("options").querySelectorAll(".opt").forEach((b, j) => {
+    b.disabled = true;
+    if (state.options[j] === q.a) b.classList.add("right");
+    else if (j === k) b.classList.add("wrong");
+    else b.classList.add("dim");
+  });
+  flash($("options").children[k], ok ? "pop" : "shake");
+
+  // The "Wist je dat?" fact: this is where he learns something, right or wrong
+  $("factTitle").textContent = ok ? "Goed! Wist je dat?" : `Het goede antwoord is: ${q.a}`;
+  $("factText").textContent = q.w;
+  $("fact").hidden = false;
+  $("score").textContent = state.good + " goed";
+  $("next").textContent = state.i + 1 < state.list.length ? "Volgende →" : "Bekijk je score";
+  $("nextBox").hidden = false;
+  $("next").focus();
+}
+
+// Keyboard: A-D or 1-4 to answer, Enter for the next question
+document.addEventListener("keydown", e => {
+  if (!state || $("play").hidden) return;
+  const k = "abcd".indexOf(e.key.toLowerCase()) >= 0 ? "abcd".indexOf(e.key.toLowerCase()) : "1234".indexOf(e.key);
+  if (!state.answered && k >= 0) answer(k);
+  else if (state.answered && e.key === "Enter") { e.preventDefault(); next(); }
+});
+$("next").onclick = () => next();
+
+// ---------- Screen 3: results ----------
+function finish() {
+  show("done");
+  const n = state.list.length, g = state.good;
+  $("result").textContent = `${g} van de ${n} goed`;
+  $("resultText").textContent =
+    g === n ? "Alles goed, knap hoor!" :
+    g >= 8 ? "Heel goed gedaan!" :
+    g >= 5 ? "Goed bezig! De foute vragen komen later nog eens terug." :
+             "Elke ronde leer je iets nieuws. Probeer het nog eens!";
+
+  // Remember these answers now, so the next round already uses them
+  state.log.forEach(an => lastResult[an.qid] = an.correct);
+
+  // Save the round to his account
+  document.querySelector("#done .saveerr")?.remove();
+  const now = new Date();
+  saveAttempt(user.uid, MODULE, {
+    test: state.cat, score: g, total: n, answers: state.log,
+    started_at: state.startedAt.toISOString(), finished_at: now.toISOString(),
+    duration_s: Math.round((now - state.startedAt) / 1000)
+  }).catch(e => $("resultText").insertAdjacentHTML("afterend", `<p class="saveerr">Score niet opgeslagen (${e.code || "fout"}).</p>`));
+
+  // Wrong questions with the right answer, to read once more
+  const wrong = state.log.map((an, i) => ({ an, q: state.list[i] })).filter(x => !x.an.correct);
+  $("reviewBox").hidden = !wrong.length;
+  $("review").innerHTML = wrong.map(x => `<li>${esc(x.q.q)}<br><span class="ans">${esc(x.q.a)}</span></li>`).join("");
+}
+
+$("again").onclick = () => start(state.cat);
+$("change").onclick = () => show("setup");
+
+drawCats();
+</script>
+</body>
+</html>
