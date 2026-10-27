@@ -18,7 +18,7 @@ Learning games and puzzles for kids, in Dutch: practice, puzzles and games.
 | `js/core.js` | Shared: Firebase login gate, save/load rounds, random, shuffle, animations |
 | `tafels/` | Multiplication tables 1-10: practice (10 sums) or 60 seconds against the clock |
 | `kennis/` + `kennis/vragen.json` | General knowledge quiz: 6 categories, 10 questions per round, a 'Wist je dat?' fact after each answer; questions answered wrong before come back more often. Add questions in `vragen.json` (never change an existing `id`) |
-| `sudoku/` (`engine.js` + `index.html`) | 4x4 and 6x6 sudoku, made new every game with exactly one solution. Levels makkelijk/normaal/moeilijk (child accounts see the first two). Broken rules show red at once; Hint fills a cell. Saved: score = cells he filled himself, total = empty cells, plus time and hints |
+| `sudoku/` (`engine.js` + `index.html`) | Daily 4x4 and 6x6 sudoku: one puzzle per size and level per day (Dutch midnight), the same for everyone (seeded from the date; do not change `engine.js` mid-day), always exactly one solution. Unfinished puzzles are kept in the browser. A row, column or box lights up green when it is complete and right. Levels makkelijk/normaal/moeilijk (child accounts see the first two). Broken rules show red at once; Hint fills a cell. Saved: score = cells he filled himself, total = empty cells, plus time and hints |
 
 ## Adding a module
 

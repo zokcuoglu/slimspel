@@ -21,9 +21,30 @@ function fits(grid, size, i, n, P) {
   return P[i].every(j => grid[j] !== n);
 }
 
-function shuffled(list) {
+// ---------- Seeded random numbers ----------
+// The daily puzzle must be the SAME for everyone on the same day, on every computer.
+// So instead of Math.random() we use a small random generator that starts from a "seed"
+// (e.g. "2026-10-27|4|makkelijk"): same seed -> same numbers -> same puzzle.
+// WARNING: changing this file changes the puzzles. Only do it between days, never mid-day.
+function hashSeed(text) {           // turns the seed text into a 32-bit number (FNV-1a)
+  let h = 2166136261;
+  for (const ch of text) { h ^= ch.codePointAt(0); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+export function seededRandom(text) {  // mulberry32: returns a function giving numbers 0..1
+  let a = hashSeed(text);
+  return () => {
+    a = (a + 0x6D2B79F5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function shuffled(list, rnd) {
   const a = list.slice();
-  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
   return a;
 }
 
@@ -50,12 +71,12 @@ export function countSolutions(grid, size, limit = 2) {
 }
 
 // A random complete, valid grid
-function fullGrid(size) {
+function fullGrid(size, rnd) {
   const P = peersTable(size);
   const g = new Array(size * size).fill(0);
   (function fill(i) {
     if (i === g.length) return true;
-    for (const n of shuffled([...Array(size)].map((_, k) => k + 1))) {
+    for (const n of shuffled([...Array(size)].map((_, k) => k + 1), rnd)) {
       if (fits(g, size, i, n, P)) { g[i] = n; if (fill(i + 1)) return true; g[i] = 0; }
     }
     return false;
@@ -72,13 +93,14 @@ export const TARGET = {
 /**
  * Make a puzzle with exactly one solution.
  * Empties cells in random order; a cell stays empty only if the puzzle still has one solution.
+ * rnd: random function; pass seededRandom(seed) for a daily puzzle (default: Math.random).
  * Returns { puzzle, solution }.
  */
-export function makePuzzle(size, level) {
-  const solution = fullGrid(size);
+export function makePuzzle(size, level, rnd = Math.random) {
+  const solution = fullGrid(size, rnd);
   const puzzle = solution.slice();
   let given = puzzle.length;
-  for (const i of shuffled([...puzzle.keys()])) {
+  for (const i of shuffled([...puzzle.keys()], rnd)) {
     if (given <= TARGET[size][level]) break;
     const keep = puzzle[i];
     puzzle[i] = 0;
@@ -86,6 +108,17 @@ export function makePuzzle(size, level) {
     else puzzle[i] = keep; // removing this one would allow two answers: put it back
   }
   return { puzzle, solution };
+}
+
+// The row, column and box that cell i belongs to (each a list of cell numbers)
+export function units(size, i) {
+  const [br, bc] = BOX[size];
+  const r = Math.floor(i / size), c = i % size;
+  const r0 = r - r % br, c0 = c - c % bc;
+  const row = [], col = [], box = [];
+  for (let k = 0; k < size; k++) { row.push(r * size + k); col.push(k * size + c); }
+  for (let y = r0; y < r0 + br; y++) for (let x = c0; x < c0 + bc; x++) box.push(y * size + x);
+  return [row, col, box];
 }
 
 // Cells whose number also appears in a peer cell (shown in red)

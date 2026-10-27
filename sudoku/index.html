@@ -26,6 +26,11 @@
 .cell.sel{background:var(--accent);color:var(--accent-ink)}
 .cell.bad{background:var(--bad-bg);color:var(--bad)}
 .cell:focus-visible{outline:none}
+/* Green light when a row, column or box is complete and right */
+@keyframes good{0%,60%{background:var(--good-bg);color:var(--good)}100%{}}
+.cell.good{animation:good 1.2s ease-out}
+@media (prefers-reduced-motion: reduce){.cell.good{animation:none}}
+.today{margin-top:14px;font-family:var(--f-display);font-weight:600}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .cell.mine{color:#8fb0ff}}
 
 .bar{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px}
@@ -57,12 +62,13 @@ setTimeout(() => {
   <!-- Screen 1: size and level -->
   <section id="setup">
     <h1><mark>Sudoku</mark></h1>
-    <p class="sub">Elk getal mag maar één keer in elke rij, elke kolom en elk blok.</p>
+    <p class="sub">Elk getal mag maar één keer in elke rij, elke kolom en elk blok.<br>Elke dag is er per niveau één nieuwe puzzel, voor iedereen dezelfde.</p>
     <div class="label">Grootte</div>
     <div class="choice" id="sizes"></div>
     <div class="label">Niveau</div>
     <div class="choice" id="levels"></div>
-    <div class="row" style="margin-top:22px"><button class="btn primary" id="go">Start</button></div>
+    <p class="today" id="today" hidden></p>
+    <div class="row" style="margin-top:18px"><button class="btn primary" id="go">Start</button></div>
     <p class="records" id="records"></p>
   </section>
 
@@ -77,7 +83,7 @@ setTimeout(() => {
     <div class="tools">
       <button class="btn" id="hint">Hint</button>
       <button class="btn" id="restart">Opnieuw</button>
-      <button class="btn" id="stop">Andere puzzel</button>
+      <button class="btn" id="stop">← Terug</button>
     </div>
   </section>
 
@@ -89,15 +95,14 @@ setTimeout(() => {
       <span class="record" id="record" hidden></span>
     </div>
     <div class="row" style="margin-top:16px">
-      <button class="btn primary" id="again">Nieuwe puzzel</button>
-      <button class="btn" id="change">Ander niveau</button>
+      <button class="btn primary" id="change">Andere puzzel van vandaag</button>
     </div>
   </section>
 </main>
 
 <script type="module">
 import { gate, userBox, saveAttempt, loadAttempts, flash, loadLocal, saveLocal } from "../js/core.js";
-import { makePuzzle, conflicts, peers } from "./engine.js";
+import { makePuzzle, conflicts, peers, units, seededRandom } from "./engine.js";
 
 const MODULE = "slimspel-sudoku";
 const LEVELS = { makkelijk: "Makkelijk", normaal: "Normaal", moeilijk: "Moeilijk" };
@@ -109,9 +114,13 @@ $("user").innerHTML = userBox(user, profile);
 // Children see two levels, adults all three
 const levels = profile.type === "child" ? ["makkelijk", "normaal"] : Object.keys(LEVELS);
 
-// Earlier solved puzzles: for the fastest-time records
+// Today's date in the Netherlands (YYYY-MM-DD): the new puzzles start at midnight Dutch time
+const today = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Amsterdam" }).format(new Date());
+
+// Earlier solved puzzles: for "already done today" and the records.
+// We wait for them, otherwise he could start a puzzle he already solved today.
 let history = [];
-loadAttempts(user.uid, MODULE).then(l => { history = l; drawRecords(); }).catch(() => {});
+try { history = await loadAttempts(user.uid, MODULE); } catch {}
 
 let size = loadLocal("sudoku:size", 4);
 let level = loadLocal("sudoku:level", "makkelijk");
@@ -119,16 +128,34 @@ if (!levels.includes(level)) level = "makkelijk";
 let S = null; // the puzzle being played
 
 const fmt = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-const testId = () => `${size}x${size}-${level}`;
+const testOf = (sz, lv) => `${sz}x${sz}-${lv}`;
+const solvedToday = test => history.find(h => h.test === test && h.day === today());
+
+// Unfinished puzzles are kept in this browser, so he can stop and continue later today.
+// Keys of other days are thrown away.
+const progressKey = (day, test) => `sudoku:progress:${day}:${test}`;
+try {
+  Object.keys(localStorage).filter(k => k.startsWith("slimspel:sudoku:progress:") && !k.includes(today()))
+    .forEach(k => localStorage.removeItem(k));
+} catch {}
 
 // ---------- Screen 1 ----------
 function chips(el, items, current, onPick) {
-  el.innerHTML = items.map(([v, t]) => `<button class="chip${v === current ? " on" : ""}" data-v="${v}">${t}</button>`).join("");
+  el.innerHTML = items.map(([v, t]) => `<button class="chip${v == current ? " on" : ""}" data-v="${v}">${t}</button>`).join("");
   el.querySelectorAll("button").forEach(b => b.onclick = () => onPick(b.dataset.v));
 }
 function drawSetup() {
-  chips($("sizes"), [[4, "4 × 4"], [6, "6 × 6"]], size, v => { size = Number(v); saveLocal("sudoku:size", size); drawSetup(); });
-  chips($("levels"), levels.map(l => [l, LEVELS[l]]), level, v => { level = v; saveLocal("sudoku:level", level); drawSetup(); });
+  // ✓ = today's puzzle of that size/level is already solved
+  const doneMark = (sz, lv) => solvedToday(testOf(sz, lv)) ? " ✓" : "";
+  const sizeDone = sz => levels.every(lv => solvedToday(testOf(sz, lv))) ? " ✓" : "";
+  chips($("sizes"), [[4, "4 × 4" + sizeDone(4)], [6, "6 × 6" + sizeDone(6)]], size, v => { size = Number(v); saveLocal("sudoku:size", size); drawSetup(); });
+  chips($("levels"), levels.map(l => [l, LEVELS[l] + doneMark(size, l)]), level, v => { level = v; saveLocal("sudoku:level", level); drawSetup(); });
+
+  const done = solvedToday(testOf(size, level));
+  $("today").hidden = !done;
+  if (done) $("today").textContent = `Vandaag opgelost in ${fmt(done.time_s)}${done.hints ? ` met ${done.hints} hint${done.hints > 1 ? "s" : ""}` : ""}. Morgen is er een nieuwe puzzel!`;
+  $("go").disabled = !!done;
+  $("go").textContent = loadLocal(progressKey(today(), testOf(size, level)), null) ? "Verder spelen" : "Start";
   drawRecords();
 }
 // Fastest time without hints for the chosen size and level
@@ -137,7 +164,7 @@ function best(test) {
   return t.length ? Math.min(...t) : null;
 }
 function drawRecords() {
-  const b = best(testId());
+  const b = best(testOf(size, level));
   $("records").textContent = b === null ? "Nog geen record voor deze puzzel." : `Jouw record (zonder hints): ${fmt(b)}`;
 }
 $("go").onclick = () => start();
@@ -146,13 +173,21 @@ $("go").onclick = () => start();
 function show(s) { ["setup", "play", "done"].forEach(x => $(x).hidden = x !== s); }
 
 function start() {
-  const { puzzle, solution } = makePuzzle(size, level);
-  S = { size, level, puzzle, solution, grid: puzzle.slice(), hinted: new Set(), sel: puzzle.indexOf(0),
-        startedAt: Date.now(), done: false };
+  const day = today(), test = testOf(size, level);
+  if (solvedToday(test)) return drawSetup();
+  // Same seed for everybody on the same day -> the same puzzle for everybody
+  const { puzzle, solution } = makePuzzle(size, level, seededRandom(`${day}|${size}|${level}`));
+  const saved = loadLocal(progressKey(day, test), null);
+  S = { day, test, size, level, puzzle, solution, done: false,
+        grid: saved?.grid?.length === puzzle.length ? saved.grid : puzzle.slice(),
+        hinted: new Set(saved?.hinted || []),
+        elapsed: saved?.elapsed || 0,   // seconds played before this visit
+        hintsUsed: saved?.hintsUsed || 0, // all hints today, also the ones wiped by Opnieuw
+        sel: puzzle.indexOf(0) };
   S.empty = puzzle.filter(n => !n).length;
-  clearInterval(S.timer);
-  S.timer = setInterval(() => $("clock").textContent = fmt(Math.floor((Date.now() - S.startedAt) / 1000)), 500);
-  $("clock").textContent = "0:00";
+  S.resumedAt = Date.now();
+  S.timer = setInterval(tick, 500);
+  tick();
   $("what").textContent = `${size} × ${size} · ${LEVELS[level]}`;
   // Build the cells once; draw() only changes their classes and text
   const [br, bc] = size === 4 ? [2, 2] : [2, 3];
@@ -164,11 +199,24 @@ function start() {
     return `<button class="cell${edge}" data-i="${i}" aria-label="rij ${r + 1}, kolom ${c + 1}"></button>`;
   }).join("");
   $("board").querySelectorAll(".cell").forEach(b => b.onclick = () => { S.sel = Number(b.dataset.i); draw(); });
-  $("pad").innerHTML = [...Array(size)].map((_, k) => `<button data-n="${k + 1}">${k + 1}</button>`).join("") ;
+  $("pad").innerHTML = [...Array(size)].map((_, k) => `<button data-n="${k + 1}">${k + 1}</button>`).join("");
   $("pad").querySelectorAll("button").forEach(b => b.onclick = () => put(Number(b.dataset.n)));
   show("play");
   draw();
 }
+
+// Seconds played in total (earlier visits + this one)
+const played = () => S.elapsed + Math.floor((Date.now() - S.resumedAt) / 1000);
+function tick() { $("clock").textContent = fmt(played()); }
+
+// Keep the unfinished puzzle in this browser (numbers, hints and time)
+function saveProgress() {
+  if (!S || S.done) return;
+  saveLocal(progressKey(S.day, S.test), { grid: S.grid, hinted: [...S.hinted], hintsUsed: S.hintsUsed, elapsed: played() });
+}
+// Also save when he closes the tab or switches away
+addEventListener("pagehide", saveProgress);
+document.addEventListener("visibilitychange", () => { if (document.hidden) saveProgress(); });
 
 function draw() {
   const bad = conflicts(S.grid, S.size);
@@ -186,12 +234,22 @@ function draw() {
   });
 }
 
+// Green light: the row, column and/or box of cell i are full AND match the real solution
+function glow(i) {
+  const cells = $("board").children;
+  for (const unit of units(S.size, i)) {
+    if (unit.every(k => S.grid[k] === S.solution[k])) unit.forEach(k => flash(cells[k], "good"));
+  }
+}
+
 // Put a number (0 = clear) in the selected cell; given and hinted cells stay as they are
 function put(n) {
   if (!S || S.done || S.sel < 0 || S.puzzle[S.sel] || S.hinted.has(S.sel)) return;
   S.grid[S.sel] = S.grid[S.sel] === n ? 0 : n; // typing the same number again clears it
   draw();
   if (conflicts(S.grid, S.size).has(S.sel)) flash($("board").children[S.sel], "shake");
+  else if (S.grid[S.sel]) glow(S.sel);
+  saveProgress();
   checkSolved();
 }
 
@@ -203,8 +261,11 @@ function hint() {
   if (i < 0) return;
   S.grid[i] = S.solution[i];
   S.hinted.add(i);
+  S.hintsUsed++;
   S.sel = i;
   draw();
+  glow(i);
+  saveProgress();
   checkSolved();
 }
 
@@ -213,27 +274,28 @@ function checkSolved() {
   if (S.grid.some(n => !n) || conflicts(S.grid, S.size).size) return;
   S.done = true;
   clearInterval(S.timer);
-  const time_s = Math.floor((Date.now() - S.startedAt) / 1000);
-  const hints = S.hinted.size;
-  const test = `${S.size}x${S.size}-${S.level}`;
-  const prev = best(test);
+  const time_s = played();
+  const hints = S.hintsUsed;
+  const prev = best(S.test);
+  [...$("board").children].forEach(c => flash(c, "good")); // whole board lights up green
+  saveLocal(progressKey(S.day, S.test), null);
 
-  // score = cells he filled himself, total = cells that were empty.
+  // score = cells he filled himself, total = cells that were empty. day = which daily puzzle.
   // answers stays empty: single cells are not useful in the admin "hardest questions" list.
-  const attempt = { test, size: S.size, level: S.level, score: S.empty - hints, total: S.empty, hints, time_s,
-                    answers: [], started_at: new Date(S.startedAt).toISOString(), finished_at: new Date().toISOString() };
+  const attempt = { test: S.test, day: S.day, size: S.size, level: S.level, score: Math.max(0, S.empty - hints), total: S.empty, hints, time_s,
+                    answers: [], finished_at: new Date().toISOString() };
   history.unshift({ ...attempt, module: MODULE });
   document.querySelector("#done .saveerr")?.remove();
   saveAttempt(user.uid, MODULE, attempt).catch(e =>
     $("resultText").insertAdjacentHTML("afterend", `<p class="saveerr">Score niet opgeslagen (${e.code || "fout"}).</p>`));
 
-  setTimeout(() => { // let him see the full grid for a moment
+  setTimeout(() => { // let him see the green board for a moment
     show("done");
     $("resultText").textContent = `${S.size} × ${S.size} · ${LEVELS[S.level]} · tijd ${fmt(time_s)}` +
       (hints ? ` · ${hints} hint${hints > 1 ? "s" : ""}` : " · zonder hints");
     $("record").hidden = !!hints || (prev !== null && time_s >= prev);
     $("record").textContent = prev === null ? "Eerste record!" : `Nieuw record! (was ${fmt(prev)})`;
-  }, 900);
+  }, 1300);
 }
 
 // Keyboard: numbers, Backspace/Delete/0 to clear, arrow keys to move
@@ -252,9 +314,9 @@ document.addEventListener("keydown", e => {
 });
 
 $("hint").onclick = hint;
-$("restart").onclick = () => { S.grid = S.puzzle.slice(); S.hinted.clear(); draw(); };
-$("stop").onclick = () => { clearInterval(S.timer); show("setup"); drawSetup(); };
-$("again").onclick = () => start();
+// Opnieuw: empty his own numbers and hints again; the clock keeps running (same puzzle, same day)
+$("restart").onclick = () => { S.grid = S.puzzle.slice(); S.hinted.clear(); draw(); saveProgress(); };
+$("stop").onclick = () => { saveProgress(); clearInterval(S.timer); show("setup"); drawSetup(); };
 $("change").onclick = () => { show("setup"); drawSetup(); };
 
 drawSetup();
