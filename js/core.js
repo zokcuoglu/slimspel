@@ -1,50 +1,184 @@
-// Shared helpers for all Slimspel pages.
-// No login yet: records are kept in this browser only (localStorage).
-const Slim = (() => {
-  const PREFIX = "slimspel:"; // keeps our keys apart from other sites' data
+// Shared core for every Slimspel page.
+// Slimspel uses the SAME Firebase project and accounts as nl-oefenbank, so:
+// - one login for both sites,
+// - approval, account type and parent link are managed on the nl-oefenbank admin page,
+// - finished rounds land in users/{uid}/attempts, where the admin statistics and
+//   the weekly parent e-mail (nl-oefenbank mailer) already look.
+// Data model and rules: see nl-oefenbank/js/core.js and nl-oefenbank/firestore.rules.
 
-  // Read a saved value. Storage can be blocked (private window), so never crash.
-  function load(name, fallback) {
-    try {
-      const raw = localStorage.getItem(PREFIX + name);
-      return raw === null ? fallback : JSON.parse(raw);
-    } catch { return fallback; }
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
+import { getFirestore, doc, getDoc, setDoc, collection, addDoc, getDocs, query, where } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+
+// Public web config, identical to nl-oefenbank (not a secret: firestore.rules control access)
+const firebaseConfig = {
+  apiKey: "AIzaSyAdTzM00PphCzTBinqL_KjyAJGwJgevH4k",
+  authDomain: "nt2-lezen.firebaseapp.com",
+  projectId: "nt2-lezen",
+  storageBucket: "nt2-lezen.firebasestorage.app",
+  messagingSenderId: "574362574093",
+  appId: "1:574362574093:web:615c5761f2f29fc9cba444"
+};
+const fb = initializeApp(firebaseConfig);
+const auth = getAuth(fb);
+const db = getFirestore(fb);
+window.__slimReady = true; // seen by the watchdog in each page
+
+// Site root, so pages at any depth can link home (this file lives in /js/)
+export const ROOT = new URL("../", import.meta.url).href;
+export const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+const userRef = uid => doc(db, "users", uid);
+const attemptsCol = uid => collection(db, "users", uid, "attempts");
+const isAdmin = p => (p?.role || "member") === "admin";
+const statusOf = p => isAdmin(p) ? "approved" : (p?.status || "pending");
+const updateProfile = (uid, data) => setDoc(userRef(uid), data, { merge: true });
+
+// ---------- Saving and loading rounds ----------
+
+// Save one finished round. Same shape as nl-oefenbank:
+// { module, test, score, total, answers:[{qid, chosen, correct}], finished_at, ... }
+// The rules allow at most 50 answers per round, so we cut there.
+export function saveAttempt(uid, module, attempt) {
+  const answers = (attempt.answers || []).slice(0, 50);
+  return addDoc(attemptsCol(uid), { ...attempt, answers, module });
+}
+
+// This user's rounds for one module, newest first
+export async function loadAttempts(uid, module) {
+  const snap = await getDocs(query(attemptsCol(uid), where("module", "==", module)));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (b.finished_at || "").localeCompare(a.finished_at || ""));
+}
+
+// ---------- Small helpers used by the games ----------
+
+// Random whole number from min to max (both included)
+export const randInt = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
+
+// Fisher-Yates shuffle: fair random order, returns a new array
+export function shuffle(list) {
+  const a = list.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
   }
+  return a;
+}
 
-  // Save a value; silently skip if storage is not available.
-  function save(name, value) {
-    try { localStorage.setItem(PREFIX + name, JSON.stringify(value)); } catch {}
+// Replay a CSS animation class on an element (pop / shake)
+export function flash(el, cls) {
+  el.classList.remove(cls);
+  void el.offsetWidth; // forces the browser to restart the animation
+  el.classList.add(cls);
+}
+
+// Browser-only settings (e.g. last chosen tables). Not for results: those go to Firestore.
+export function loadLocal(name, fallback) {
+  try { const raw = localStorage.getItem("slimspel:" + name); return raw === null ? fallback : JSON.parse(raw); }
+  catch { return fallback; }
+}
+export function saveLocal(name, value) {
+  try { localStorage.setItem("slimspel:" + name, JSON.stringify(value)); } catch {}
+}
+
+// ---------- User box in the page header ----------
+
+export function userBox(user, profile) {
+  const name = profile.name || user.displayName || "";
+  return `<span class="ub">${user.photoURL ? `<img src="${esc(user.photoURL)}" alt="">` : ""}
+    <span>${esc(name)}</span>
+    <button type="button" class="ub-out" data-core="logout">Uitloggen</button></span>`;
+}
+document.addEventListener("click", e => {
+  if (e.target.closest("[data-core='logout']")) signOut(auth).then(() => location.href = ROOT);
+});
+
+// ---------- Login gate (full-screen overlay, Dutch, child friendly) ----------
+
+function overlay(html) {
+  let g = document.getElementById("gate");
+  if (!g) { g = document.createElement("div"); g.id = "gate"; document.body.appendChild(g); }
+  g.innerHTML = `<div class="gc">${html}</div>`;
+  return g;
+}
+const closeOverlay = () => document.getElementById("gate")?.remove();
+
+async function googleLogin() {
+  const p = new GoogleAuthProvider();
+  try { await signInWithPopup(auth, p); }
+  catch (e) {
+    // Some browsers block popups: fall back to a full-page redirect
+    if (["auth/popup-blocked", "auth/operation-not-supported-in-this-environment"].includes(e.code)) return signInWithRedirect(auth, p);
+    if (e.code !== "auth/popup-closed-by-user") throw e;
   }
+}
 
-  // Store a score only if it beats the old record.
-  // Returns the previous record so the page can say "nieuw record!".
-  function submitBest(name, score) {
-    const prev = load("best:" + name, null);
-    if (prev === null || score > prev) save("best:" + name, score);
-    return prev;
-  }
+/**
+ * Wait until the visitor is signed in AND approved by the admin.
+ * seen: module id to record as visited (users/{uid}.seen.{id}); the admin statistics use it.
+ * Resolves with { user, profile }.
+ */
+export function gate({ seen = "" } = {}) {
+  overlay(`<p>Laden…</p>`);
+  return new Promise(resolve => {
+    onAuthStateChanged(auth, async user => {
+      if (!user) { showLogin(); return; }
+      try {
+        const snap = await getDoc(userRef(user.uid));
+        let profile = snap.exists() ? snap.data() : null;
+        if (!profile) {
+          // First visit ever (also not on nl-oefenbank): create the profile with the defaults the rules allow
+          profile = { name: user.displayName || "", email: user.email || "", photo: user.photoURL || "", role: "member", status: "pending", created_at: new Date().toISOString() };
+          await updateProfile(user.uid, profile);
+        }
+        if (!profile.type) profile = await askType(user, profile);
+        const fresh = { name: profile.name || user.displayName || "", email: user.email || "", photo: user.photoURL || "", last_active: new Date().toISOString() };
+        if (statusOf(profile) !== "approved") {
+          updateProfile(user.uid, fresh).catch(() => {});
+          showWaiting(user, profile); return;
+        }
+        updateProfile(user.uid, { ...fresh, ...(seen ? { seen: { [seen]: fresh.last_active } } : {}) }).catch(() => {});
+        closeOverlay();
+        resolve({ user, profile });
+      } catch (e) {
+        overlay(`<h2>Er ging iets mis</h2><p class="err">${esc(e.code || e.message || e)}</p>
+          <p>Ververs de pagina. Gaat het nog steeds mis? Stuur deze code naar Zana.</p>
+          <button data-core="logout">Uitloggen</button>`);
+      }
+    });
+  });
+}
 
-  // Random whole number from min to max (both included)
-  function randInt(min, max) {
-    return min + Math.floor(Math.random() * (max - min + 1));
-  }
+function showLogin() {
+  const g = overlay(`<h2><mark>Slim</mark>spel</h2>
+    <p>Log in met je Google-account. Zo worden je scores bewaard.</p>
+    <button class="btn primary" id="g-login">Inloggen met Google</button><div id="g-err"></div>`);
+  g.querySelector("#g-login").onclick = () => googleLogin().catch(e => {
+    g.querySelector("#g-err").innerHTML = `<p class="err">Inloggen lukte niet: ${esc(e.code || e.message)}</p>`;
+  });
+}
 
-  // Fisher-Yates shuffle: fair random order, returns a new array
-  function shuffle(list) {
-    const a = list.slice();
-    for (let i = a.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [a[i], a[j]] = [a[j], a[i]];
-    }
-    return a;
-  }
+function showWaiting(user, profile) {
+  const blocked = statusOf(profile) === "blocked";
+  overlay(`<h2>${blocked ? "Dit account is uitgezet" : "Nog even wachten"}</h2>
+    <p>${blocked ? "Denk je dat dit een vergissing is? Vraag het aan Zana." : "Je account moet eerst worden goedgekeurd. Vraag het aan je ouder of aan Zana, en klik daarna op opnieuw proberen."}</p>
+    <p class="small">${esc(user.email || "")}</p>
+    ${blocked ? "" : `<button class="btn primary" onclick="location.reload()">Opnieuw proberen</button>`}
+    <button class="btn" data-core="logout">Uitloggen</button>`);
+}
 
-  // Replay a CSS animation class on an element (pop / shake)
-  function flash(el, cls) {
-    el.classList.remove(cls);
-    void el.offsetWidth; // forces the browser to restart the animation
-    el.classList.add(cls);
-  }
-
-  return { load, save, submitBest, randInt, shuffle, flash };
-})();
+// First login only: who uses this account? Same values as nl-oefenbank ("child" / "adult").
+function askType(user, profile) {
+  return new Promise(resolve => {
+    const g = overlay(`<h2>Wie ben jij?</h2>
+      <div class="tiles">
+        <button class="btn" data-t="child">Leerling</button>
+        <button class="btn" data-t="adult">Volwassene</button>
+      </div><div id="g-err"></div>`);
+    g.querySelectorAll("[data-t]").forEach(b => b.onclick = async () => {
+      try { await updateProfile(user.uid, { type: b.dataset.t }); resolve({ ...profile, type: b.dataset.t }); }
+      catch (e) { g.querySelector("#g-err").innerHTML = `<p class="err">Opslaan lukte niet: ${esc(e.code || e.message)}</p>`; }
+    });
+  });
+}

@@ -39,8 +39,21 @@
 </style>
 </head>
 <body>
+<!-- Covers the page until js/core.js has checked the login. If core.js never loads
+     (network block, old cache), the watchdog tells the visitor after 10 seconds. -->
+<div id="gate"><div class="gc"><p>Laden…</p></div></div>
+<script>
+setTimeout(() => {
+  if (window.__slimReady) return;
+  document.querySelector("#gate .gc").innerHTML =
+    "<h2>Laden lukt niet</h2><p>Ververs de pagina. Gaat het nog steeds mis? Vraag het aan Zana.</p>";
+}, 10000);
+</script>
 <main class="wrap">
-  <a class="back" href="../">← Slimspel</a>
+  <div class="top">
+    <a class="back" href="../">← Slimspel</a>
+    <span id="user"></span>
+  </div>
 
   <!-- Screen 1: choose tables and mode -->
   <section id="setup">
@@ -100,15 +113,26 @@
   </section>
 </main>
 
-<script src="../js/core.js"></script>
-<script>
+<script type="module">
+import { gate, userBox, saveAttempt, loadAttempts, randInt, flash, loadLocal, saveLocal } from "../js/core.js";
+
 // ---------- Settings ----------
+const MODULE = "slimspel-tafels"; // id in attempts, admin statistics and the weekly mail
 const PRACTICE_COUNT = 10; // questions in practice mode
 const CLOCK_SECONDS = 60;  // length of a "tegen de klok" round
 const $ = id => document.getElementById(id);
 
-// Remember the last chosen tables so he doesn't have to click them every time
-let chosen = new Set(Slim.load("tafels:chosen", [2, 3, 4, 5]));
+// Wait for login + approval; mark this page as opened for the admin statistics
+const { user, profile } = await gate({ seen: MODULE });
+$("user").innerHTML = userBox(user, profile);
+
+// Earlier rounds of this account: used for the "tegen de klok" records.
+// If loading fails we still let him play; records just start empty.
+let history = [];
+loadAttempts(user.uid, MODULE).then(list => history = list).catch(() => {});
+
+// Remember the last chosen tables (this browser only) so he doesn't have to click them every time
+let chosen = new Set(loadLocal("tafels:chosen", [2, 3, 4, 5]));
 let state = null; // everything about the round that is running
 
 // ---------- Screen 1: setup ----------
@@ -125,7 +149,7 @@ function drawTables() {
   // Can't start without at least one table
   document.querySelectorAll(".mode").forEach(m => m.disabled = chosen.size === 0);
 }
-function saveChosen() { Slim.save("tafels:chosen", [...chosen]); drawTables(); }
+function saveChosen() { saveLocal("tafels:chosen", [...chosen]); drawTables(); }
 $("all").onclick = () => { chosen = new Set([1,2,3,4,5,6,7,8,9,10]); saveChosen(); };
 $("none").onclick = () => { chosen = new Set(); saveChosen(); };
 document.querySelectorAll(".mode").forEach(m => m.onclick = () => start(m.dataset.mode));
@@ -137,7 +161,7 @@ function show(screen) {
 
 function start(mode) {
   clearInterval(state?.timer);
-  state = { mode, n: 0, good: 0, mistakes: [], input: "", busy: false, last: "" };
+  state = { mode, n: 0, good: 0, mistakes: [], log: [], input: "", busy: false, last: "", startedAt: new Date() };
   show("play");
   if (mode === "clock") {
     state.endAt = Date.now() + CLOCK_SECONDS * 1000;
@@ -152,8 +176,8 @@ function nextQuestion() {
   const tables = [...chosen];
   let a, b, key;
   do {
-    b = tables[Slim.randInt(0, tables.length - 1)]; // the table
-    a = Slim.randInt(1, 10);                          // the multiplier
+    b = tables[randInt(0, tables.length - 1)]; // the table
+    a = randInt(1, 10);                          // the multiplier
     key = a + "×" + b;
   } while (key === state.last); // never the same sum twice in a row (always 10 options, so this ends)
   state.last = key;
@@ -197,14 +221,16 @@ function check() {
   state.busy = true; // ignore keys while we show the feedback
   const right = state.a * state.b;
   const ok = Number(state.input) === right;
+  // One line per answer, same shape as nl-oefenbank: qid "3×6" lets the admin page and mail group mistakes
+  state.log.push({ qid: `${state.a}×${state.b}`, chosen: state.input, correct: ok });
   if (ok) {
     state.good++;
     $("answer").className = "answer good";
-    Slim.flash($("answer"), "pop");
+    flash($("answer"), "pop");
   } else {
     state.mistakes.push(`${state.a} × ${state.b} = ${right}`);
     $("answer").className = "answer bad";
-    Slim.flash($("answer"), "shake");
+    flash($("answer"), "shake");
     $("hint").textContent = `${state.a} × ${state.b} = ${right}`;
   }
   drawBar();
@@ -240,6 +266,32 @@ function finish() {
   clearInterval(state.timer);
   show("done");
   $("record").hidden = true;
+  document.querySelector("#done .saveerr")?.remove();
+
+  // Records are per set of tables: "2,3,4,5" is a different race than "6,7,8,9"
+  const setKey = [...chosen].sort((x, y) => x - y).join(",");
+  const test = state.mode === "practice" ? "oefenen" : "klok";
+
+  // Best earlier "klok" score for this same set of tables (null = never played it)
+  const earlier = history.filter(h => h.test === "klok" && h.tables === setKey).map(h => h.score || 0);
+  const prev = earlier.length ? Math.max(...earlier) : null;
+
+  // Save the round to his account (only if he answered something).
+  // total = answers given, so "15/17" in the clock mode means 15 of 17 answered were right.
+  if (state.log.length) {
+    const now = new Date();
+    const attempt = {
+      test, tables: setKey,
+      score: state.good, total: state.log.length,
+      answers: state.log,
+      started_at: state.startedAt.toISOString(), finished_at: now.toISOString(),
+      duration_s: Math.round((now - state.startedAt) / 1000)
+    };
+    history.unshift({ ...attempt, module: MODULE }); // so the next round sees this record at once
+    saveAttempt(user.uid, MODULE, attempt).catch(e => {
+      $("resultText").insertAdjacentHTML("afterend", `<p class="saveerr">Score niet opgeslagen (${e.code || "fout"}).</p>`);
+    });
+  }
 
   if (state.mode === "practice") {
     const g = state.good;
@@ -250,9 +302,6 @@ function finish() {
       g >= 5 ? "Goed bezig, oefen nog even door." :
                "Blijf oefenen, het wordt steeds makkelijker.";
   } else {
-    // Records are per set of tables: "2,3,4,5" is a different race than "6,7,8,9"
-    const setKey = [...chosen].sort((x, y) => x - y).join(",");
-    const prev = Slim.submitBest("tafels-klok:" + setKey, state.good);
     $("result").textContent = `${state.good} goed`;
     $("resultText").textContent = `in ${CLOCK_SECONDS} seconden · tafels ${setKey.replaceAll(",", ", ")}`;
     if (prev === null || state.good > prev) {

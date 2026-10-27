@@ -27,7 +27,7 @@ body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--f-body)
 .wrap{max-width:760px;margin:0 auto;padding-inline:16px;padding-block:20px 48px}
 h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0}
 h1{font-size:clamp(30px,6vw,42px);font-weight:700}
-h1 mark{background:linear-gradient(transparent 55%,var(--accent) 55%);color:inherit;padding:0 .1em}
+h1 mark,#gate h2 mark{background:linear-gradient(transparent 55%,var(--accent) 55%);color:inherit;padding:0 .1em}
 .sub{color:var(--muted);margin:.25rem 0 0}
 a{color:inherit}
 button{font:inherit;color:inherit;cursor:pointer}
@@ -71,3 +71,21 @@ a.card:hover{border-color:var(--ink);transform:translateY(-2px)}
 .pop{animation:pop .3s ease}
 .shake{animation:shake .25s ease 2}
 @media (prefers-reduced-motion: reduce){.pop,.shake{animation:none}}
+
+/* Header with title on the left, user box on the right */
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.ub{display:inline-flex;align-items:center;gap:8px;font-size:14px;color:var(--muted)}
+.ub img{width:28px;height:28px;border-radius:50%}
+.ub-out{font:inherit;font-size:13px;border:1.5px solid var(--line);background:none;color:inherit;border-radius:8px;padding:3px 10px}
+.ub-out:hover{border-color:var(--ink);color:var(--ink)}
+
+/* Login / waiting overlay (built by js/core.js) */
+#gate{position:fixed;inset:0;z-index:100;background:var(--paper);display:grid;place-items:center;padding:16px;overflow:auto}
+#gate .gc{background:var(--card);border:2px solid var(--line);border-radius:16px;padding:26px 22px;max-width:420px;width:100%;display:flex;flex-direction:column;gap:14px}
+#gate h2{font-size:26px}
+#gate p{margin:0;color:var(--muted)}
+#gate .small{font-size:14px}
+#gate .tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+#gate .tiles .btn{padding:18px 10px}
+#gate .err{background:var(--bad-bg);color:var(--bad);border-radius:10px;padding:10px 12px}
+.saveerr{color:var(--bad);font-size:14px;margin:8px 0 0}

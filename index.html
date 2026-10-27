@@ -9,11 +9,24 @@
 <link rel="stylesheet" href="css/site.css">
 </head>
 <body>
+<!-- Covers the page until js/core.js has checked the login. If core.js never loads
+     (network block, old cache), the watchdog tells the visitor after 10 seconds. -->
+<div id="gate"><div class="gc"><p>Laden…</p></div></div>
+<script>
+setTimeout(() => {
+  if (window.__slimReady) return;
+  document.querySelector("#gate .gc").innerHTML =
+    "<h2>Laden lukt niet</h2><p>Ververs de pagina. Gaat het nog steeds mis? Vraag het aan Zana.</p>";
+}, 10000);
+</script>
 <main class="wrap">
   <!-- Home page: one card per module, grouped. "soon" cards are not clickable yet. -->
-  <header>
-    <h1><mark>Slim</mark>spel</h1>
-    <p class="sub">Leren, puzzelen en spelen.</p>
+  <header class="top">
+    <div>
+      <h1><mark>Slim</mark>spel</h1>
+      <p class="sub">Leren, puzzelen en spelen.</p>
+    </div>
+    <span id="user"></span>
   </header>
 
   <h2 class="group">Oefenen</h2>
@@ -75,5 +88,11 @@
     </div>
   </div>
 </main>
+<script type="module">
+// Only approved accounts get past this line; then show who is logged in
+import { gate, userBox } from "./js/core.js";
+const { user, profile } = await gate();
+document.getElementById("user").innerHTML = userBox(user, profile);
+</script>
 </body>
 </html>
