@@ -87,6 +87,8 @@ a.card:hover{border-color:var(--ink);transform:translateY(-2px)}
 #gate .small{font-size:14px}
 #gate .tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 #gate .tiles .btn{padding:18px 10px}
+#gate .tiles.groeps{grid-template-columns:repeat(4,1fr)}
+#gate .tiles.groeps .btn{padding:12px 4px}
 #gate .err{background:var(--bad-bg);color:var(--bad);border-radius:10px;padding:10px 12px}
 .saveerr{color:var(--bad);font-size:14px;margin:8px 0 0}
 

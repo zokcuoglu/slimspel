@@ -58,7 +58,7 @@ setTimeout(() => {
   <!-- Screen 1: choose tables and mode -->
   <section id="setup">
     <h1>De <mark>tafels</mark></h1>
-    <p class="sub">Kies welke tafels je wilt oefenen.</p>
+    <p class="sub" id="tafelsSub">Kies welke tafels je wilt oefenen.</p>
 
     <div class="label">Tafels</div>
     <div class="tables" id="tables"></div>
@@ -114,7 +114,7 @@ setTimeout(() => {
 </main>
 
 <script type="module">
-import { gate, userBox, saveAttempt, loadAttempts, randInt, flash, loadLocal, saveLocal } from "../js/core.js";
+import { gate, userBox, saveAttempt, loadAttempts, randInt, flash, loadLocal, saveLocal, groepNr } from "../js/core.js";
 
 // ---------- Settings ----------
 const MODULE = "slimspel-tafels"; // id in attempts, admin statistics and the weekly mail
@@ -131,14 +131,21 @@ $("user").innerHTML = userBox(user, profile);
 let history = [];
 loadAttempts(user.uid, MODULE).then(list => history = list).catch(() => {});
 
-// Remember the last chosen tables (this browser only) so he doesn't have to click them every time
-let chosen = new Set(loadLocal("tafels:chosen", [2, 3, 4, 5]));
+// Which tables he can choose: from groep 5 on, the tables of 1, 2 and 10 are too easy and are left out.
+// Groep 1-4, unknown groep and adults: all tables.
+const g = groepNr(profile);
+const TABLES = profile.type === "child" && g !== null && g >= 5 ? [3, 4, 5, 6, 7, 8, 9] : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
+// Remember the last chosen tables (this browser only) so he doesn't have to click them every time.
+// Drop any that are no longer offered (e.g. after moving up a groep).
+let chosen = new Set(loadLocal("tafels:chosen", [3, 4, 5]).filter(t => TABLES.includes(t)));
+if (!chosen.size) chosen = new Set([3, 4, 5]);
 let state = null; // everything about the round that is running
 
 // ---------- Screen 1: setup ----------
 function drawTables() {
   $("tables").innerHTML = "";
-  for (let t = 1; t <= 10; t++) {
+  for (const t of TABLES) {
     const b = document.createElement("button");
     b.className = "chip" + (chosen.has(t) ? " on" : "");
     b.textContent = t;
@@ -150,7 +157,7 @@ function drawTables() {
   document.querySelectorAll(".mode").forEach(m => m.disabled = chosen.size === 0);
 }
 function saveChosen() { saveLocal("tafels:chosen", [...chosen]); drawTables(); }
-$("all").onclick = () => { chosen = new Set([1,2,3,4,5,6,7,8,9,10]); saveChosen(); };
+$("all").onclick = () => { chosen = new Set(TABLES); saveChosen(); };
 $("none").onclick = () => { chosen = new Set(); saveChosen(); };
 document.querySelectorAll(".mode").forEach(m => m.onclick = () => start(m.dataset.mode));
 

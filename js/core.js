@@ -169,6 +169,8 @@ export function gate({ seen = "" } = {}) {
           await updateProfile(user.uid, profile);
         }
         if (!profile.type) profile = await askType(user, profile);
+        // Children: some games depend on the groep (e.g. tafels), so ask it once if it is missing
+        if (profile.type === "child" && !/^groep[1-8]$/.test(profile.groep || "")) profile = await askGroep(user, profile);
         const fresh = { name: profile.name || user.displayName || "", email: user.email || "", photo: user.photoURL || "", last_active: new Date().toISOString() };
         if (statusOf(profile) !== "approved") {
           updateProfile(user.uid, fresh).catch(() => {});
@@ -202,6 +204,22 @@ function showWaiting(user, profile) {
     <p class="small">${esc(user.email || "")}</p>
     ${blocked ? "" : `<button class="btn primary" onclick="location.reload()">Opnieuw proberen</button>`}
     <button class="btn" data-core="logout">Uitloggen</button>`);
+}
+
+// The child's groep as a number (1-8), or null if unknown. Moves up every August (nl-oefenbank mailer).
+export const groepNr = profile => /^groep([1-8])$/.test(profile?.groep || "") ? Number(profile.groep.slice(5)) : null;
+
+// Asked once if a child has no groep yet. Same field as the nl-oefenbank profile page.
+function askGroep(user, profile) {
+  return new Promise(resolve => {
+    const g = overlay(`<h2>In welke groep zit je?</h2>
+      <div class="tiles groeps">${[1, 2, 3, 4, 5, 6, 7, 8].map(n => `<button class="btn" data-g="groep${n}">Groep ${n}</button>`).join("")}</div>
+      <div id="g-err"></div>`);
+    g.querySelectorAll("[data-g]").forEach(b => b.onclick = async () => {
+      try { await updateProfile(user.uid, { groep: b.dataset.g }); resolve({ ...profile, groep: b.dataset.g }); }
+      catch (e) { g.querySelector("#g-err").innerHTML = `<p class="err">Opslaan lukte niet: ${esc(e.code || e.message)}</p>`; }
+    });
+  });
 }
 
 // First login only: who uses this account? Same values as nl-oefenbank ("child" / "adult").
