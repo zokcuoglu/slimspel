@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tafels · Slimspel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Andika:wght@400;700&family=Fredoka:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="../css/site.css">
+<style>
+/* Page-specific styles for the tafels module */
+.tables{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 6px}
+.tables .chip{min-width:52px;font-size:18px;padding:8px 12px}
+.modes{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:12px;margin-top:10px}
+.mode{text-align:left;background:var(--card);border:2px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:4px}
+.mode:hover:not(:disabled){border-color:var(--ink)}
+.mode h3{font-size:20px}
+.mode p{margin:0;color:var(--muted);font-size:15px}
+.mode:disabled{opacity:.4;cursor:not-allowed}
+.label{font-family:var(--f-display);font-weight:600;margin-top:22px}
+
+/* Play screen */
+.bar{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.question{text-align:center;font-family:var(--f-display);font-weight:700;font-size:clamp(44px,12vw,72px);font-variant-numeric:tabular-nums;line-height:1.1;margin:6px 0 10px}
+.answer{display:block;margin:0 auto;min-width:3.2em;min-height:1.4em;text-align:center;font-family:var(--f-display);font-weight:700;font-size:clamp(36px,9vw,52px);border-bottom:4px dashed var(--muted);font-variant-numeric:tabular-nums;width:fit-content;padding:0 .3em}
+.answer.good{color:var(--good);border-color:var(--good)}
+.answer.bad{color:var(--bad);border-color:var(--bad)}
+.hint{text-align:center;min-height:1.6em;margin:10px 0 0;color:var(--bad);font-weight:700}
+.keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:320px;margin:18px auto 0}
+.keypad button{background:var(--card);border:2px solid var(--line);border-radius:12px;padding:12px 0;font-family:var(--f-display);font-weight:600;font-size:24px}
+.keypad button:hover{border-color:var(--ink)}
+.keypad .ok{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+
+/* Results screen */
+.big{font-family:var(--f-display);font-weight:700;font-size:clamp(40px,10vw,60px);line-height:1.1}
+.record{display:inline-block;background:var(--accent);color:var(--accent-ink);font-family:var(--f-display);font-weight:600;border-radius:99px;padding:3px 12px;margin-top:8px}
+.mistakes{list-style:none;padding:0;margin:10px 0 0;display:flex;flex-wrap:wrap;gap:8px}
+.mistakes li{background:var(--bad-bg);color:var(--bad);border-radius:10px;padding:4px 10px;font-weight:700;font-variant-numeric:tabular-nums}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <a class="back" href="../">← Slimspel</a>
+
+  <!-- Screen 1: choose tables and mode -->
+  <section id="setup">
+    <h1>De <mark>tafels</mark></h1>
+    <p class="sub">Kies welke tafels je wilt oefenen.</p>
+
+    <div class="label">Tafels</div>
+    <div class="tables" id="tables"></div>
+    <div class="row">
+      <button class="btn" id="all">Alles</button>
+      <button class="btn" id="none">Geen</button>
+    </div>
+
+    <div class="label">Hoe wil je spelen?</div>
+    <div class="modes">
+      <button class="mode" data-mode="practice">
+        <h3>Oefenen</h3>
+        <p>10 sommen, rustig aan. Fout? Dan zie je het goede antwoord.</p>
+      </button>
+      <button class="mode" data-mode="clock">
+        <h3>Tegen de klok</h3>
+        <p>Zoveel mogelijk goed in 60 seconden. Verbeter je record!</p>
+      </button>
+    </div>
+  </section>
+
+  <!-- Screen 2: the questions -->
+  <section id="play" hidden>
+    <div class="bar">
+      <span class="chip" id="counter"></span>
+      <span class="chip" id="score">0 goed</span>
+    </div>
+    <div class="progress"><span id="progress"></span></div>
+    <div class="panel">
+      <div class="question" id="question"></div>
+      <div class="answer" id="answer"></div>
+      <p class="hint" id="hint"></p>
+      <div class="keypad" id="keypad"></div>
+    </div>
+  </section>
+
+  <!-- Screen 3: results -->
+  <section id="done" hidden>
+    <div class="panel">
+      <div class="big" id="result"></div>
+      <p class="sub" id="resultText"></p>
+      <span class="record" id="record" hidden></span>
+      <div id="mistakeBox" hidden>
+        <div class="label">Deze waren nog lastig</div>
+        <ul class="mistakes" id="mistakes"></ul>
+      </div>
+    </div>
+    <div class="row" style="margin-top:16px">
+      <button class="btn primary" id="again">Nog een keer</button>
+      <button class="btn" id="change">Andere tafels</button>
+    </div>
+  </section>
+</main>
+
+<script src="../js/core.js"></script>
+<script>
+// ---------- Settings ----------
+const PRACTICE_COUNT = 10; // questions in practice mode
+const CLOCK_SECONDS = 60;  // length of a "tegen de klok" round
+const $ = id => document.getElementById(id);
+
+// Remember the last chosen tables so he doesn't have to click them every time
+let chosen = new Set(Slim.load("tafels:chosen", [2, 3, 4, 5]));
+let state = null; // everything about the round that is running
+
+// ---------- Screen 1: setup ----------
+function drawTables() {
+  $("tables").innerHTML = "";
+  for (let t = 1; t <= 10; t++) {
+    const b = document.createElement("button");
+    b.className = "chip" + (chosen.has(t) ? " on" : "");
+    b.textContent = t;
+    b.setAttribute("aria-pressed", chosen.has(t));
+    b.onclick = () => { chosen.has(t) ? chosen.delete(t) : chosen.add(t); saveChosen(); };
+    $("tables").appendChild(b);
+  }
+  // Can't start without at least one table
+  document.querySelectorAll(".mode").forEach(m => m.disabled = chosen.size === 0);
+}
+function saveChosen() { Slim.save("tafels:chosen", [...chosen]); drawTables(); }
+$("all").onclick = () => { chosen = new Set([1,2,3,4,5,6,7,8,9,10]); saveChosen(); };
+$("none").onclick = () => { chosen = new Set(); saveChosen(); };
+document.querySelectorAll(".mode").forEach(m => m.onclick = () => start(m.dataset.mode));
+
+// ---------- Screen 2: playing ----------
+function show(screen) {
+  ["setup", "play", "done"].forEach(s => $(s).hidden = s !== screen);
+}
+
+function start(mode) {
+  clearInterval(state?.timer);
+  state = { mode, n: 0, good: 0, mistakes: [], input: "", busy: false, last: "" };
+  show("play");
+  if (mode === "clock") {
+    state.endAt = Date.now() + CLOCK_SECONDS * 1000;
+    state.timer = setInterval(tick, 200); // update the clock 5x per second
+    tick();
+  }
+  nextQuestion();
+}
+
+// Make a new sum. Dutch school notation: "3 × 6" = 3 times the table of 6.
+function nextQuestion() {
+  const tables = [...chosen];
+  let a, b, key;
+  do {
+    b = tables[Slim.randInt(0, tables.length - 1)]; // the table
+    a = Slim.randInt(1, 10);                          // the multiplier
+    key = a + "×" + b;
+  } while (key === state.last); // never the same sum twice in a row (always 10 options, so this ends)
+  state.last = key;
+  state.a = a; state.b = b; state.input = ""; state.busy = false;
+  state.n++;
+  $("question").textContent = `${a} × ${b}`;
+  $("hint").textContent = "";
+  $("answer").className = "answer";
+  drawInput();
+  drawBar();
+}
+
+function drawInput() { $("answer").textContent = state.input || " "; }
+
+function drawBar() {
+  $("score").textContent = state.good + " goed";
+  if (state.mode === "practice") {
+    $("counter").textContent = `Som ${Math.min(state.n, PRACTICE_COUNT)} van ${PRACTICE_COUNT}`;
+    $("progress").style.width = ((state.n - 1) / PRACTICE_COUNT * 100) + "%";
+  }
+}
+
+// Clock mode: count down and stop at zero
+function tick() {
+  const left = Math.max(0, state.endAt - Date.now());
+  $("counter").textContent = "⏱ " + Math.ceil(left / 1000) + " s";
+  $("progress").style.width = (left / (CLOCK_SECONDS * 1000) * 100) + "%";
+  if (left === 0) finish();
+}
+
+// Handle one key: digit, delete or OK (from screen keypad or keyboard)
+function press(k) {
+  if (!state || state.busy || $("play").hidden) return;
+  if (/^\d$/.test(k) && state.input.length < 3) state.input += k;
+  else if (k === "del") state.input = state.input.slice(0, -1);
+  else if (k === "ok" && state.input !== "") return check();
+  drawInput();
+}
+
+function check() {
+  state.busy = true; // ignore keys while we show the feedback
+  const right = state.a * state.b;
+  const ok = Number(state.input) === right;
+  if (ok) {
+    state.good++;
+    $("answer").className = "answer good";
+    Slim.flash($("answer"), "pop");
+  } else {
+    state.mistakes.push(`${state.a} × ${state.b} = ${right}`);
+    $("answer").className = "answer bad";
+    Slim.flash($("answer"), "shake");
+    $("hint").textContent = `${state.a} × ${state.b} = ${right}`;
+  }
+  drawBar();
+  // Short pause; a wrong answer stays a bit longer so he can read the right one
+  const wait = ok ? 450 : (state.mode === "practice" ? 1600 : 900);
+  setTimeout(() => {
+    if (state.mode === "practice" && state.n >= PRACTICE_COUNT) finish();
+    else if (state.mode === "clock" && Date.now() >= state.endAt) finish();
+    else nextQuestion();
+  }, wait);
+}
+
+// Build the on-screen keypad (for mouse); keyboard works too
+const keys = ["1","2","3","4","5","6","7","8","9","del","0","ok"];
+keys.forEach(k => {
+  const b = document.createElement("button");
+  b.textContent = k === "del" ? "⌫" : k === "ok" ? "OK" : k;
+  if (k === "ok") b.className = "ok";
+  b.setAttribute("aria-label", k === "del" ? "wissen" : k);
+  b.onclick = () => press(k);
+  $("keypad").appendChild(b);
+});
+document.addEventListener("keydown", e => {
+  if (/^\d$/.test(e.key)) press(e.key);
+  else if (e.key === "Backspace") press("del");
+  else if (e.key === "Enter") { e.preventDefault(); press("ok"); }
+});
+
+// ---------- Screen 3: results ----------
+function finish() {
+  if (state.finished) return; // timer and last answer could both call this
+  state.finished = true;
+  clearInterval(state.timer);
+  show("done");
+  $("record").hidden = true;
+
+  if (state.mode === "practice") {
+    const g = state.good;
+    $("result").textContent = `${g} van de ${PRACTICE_COUNT} goed`;
+    $("resultText").textContent =
+      g === PRACTICE_COUNT ? "Alles goed, top!" :
+      g >= 8 ? "Heel goed gedaan!" :
+      g >= 5 ? "Goed bezig, oefen nog even door." :
+               "Blijf oefenen, het wordt steeds makkelijker.";
+  } else {
+    // Records are per set of tables: "2,3,4,5" is a different race than "6,7,8,9"
+    const setKey = [...chosen].sort((x, y) => x - y).join(",");
+    const prev = Slim.submitBest("tafels-klok:" + setKey, state.good);
+    $("result").textContent = `${state.good} goed`;
+    $("resultText").textContent = `in ${CLOCK_SECONDS} seconden · tafels ${setKey.replaceAll(",", ", ")}`;
+    if (prev === null || state.good > prev) {
+      $("record").hidden = false;
+      $("record").textContent = prev === null ? "Eerste record!" : `Nieuw record! (was ${prev})`;
+    } else {
+      $("resultText").textContent += ` · record: ${prev}`;
+    }
+  }
+
+  // Show each wrong sum once, so he sees what to practise
+  const unique = [...new Set(state.mistakes)];
+  $("mistakeBox").hidden = unique.length === 0;
+  $("mistakes").innerHTML = unique.map(m => `<li>${m}</li>`).join("");
+}
+
+$("again").onclick = () => start(state.mode);
+$("change").onclick = () => { show("setup"); drawTables(); };
+
+drawTables();
+</script>
+</body>
+</html>
