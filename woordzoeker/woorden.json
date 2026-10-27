@@ -1,0 +1,11 @@
+{
+  "_about": "Word lists for the woordzoeker. Capital letters only, no accents and no 'IJ' (in Dutch puzzles IJ is sometimes one letter, so we skip those words). 3 to 11 letters. Changing a list changes the daily puzzles: only do it between days.",
+  "themes": [
+    { "id": "dieren", "title": "Dieren", "words": ["HOND", "KAT", "PAARD", "KOE", "SCHAAP", "VARKEN", "LEEUW", "OLIFANT", "GIRAF", "ZEBRA", "AAP", "BEER", "VOS", "WOLF", "EEND", "UIL", "MUIS", "HAAI", "SLANG", "SPIN", "MIER", "KIKKER", "EGEL", "HERT", "GEIT", "KIP", "HAAS", "PINGUIN", "KROKODIL"] },
+    { "id": "landen", "title": "Landen", "words": ["SPANJE", "DUITSLAND", "POLEN", "CHINA", "JAPAN", "CANADA", "MEXICO", "PERU", "CHILI", "EGYPTE", "MAROKKO", "INDIA", "RUSLAND", "ZWEDEN", "NOORWEGEN", "DENEMARKEN", "PORTUGAL", "GRIEKENLAND", "IERLAND", "ENGELAND", "CUBA", "KENIA", "NEDERLAND", "SCHOTLAND", "IRAN"] },
+    { "id": "voetbal", "title": "Voetbal", "words": ["BAL", "DOEL", "KEEPER", "SPITS", "PENALTY", "CORNER", "TRAINER", "VELD", "NET", "SHIRT", "SCHOEN", "KAART", "TEAM", "FLUIT", "STADION", "BEKER", "ELFTAL", "AANVOERDER", "VERDEDIGER", "HELFT", "KOPBAL", "SUPPORTER", "PAAL", "LAT"] },
+    { "id": "eten", "title": "Eten", "words": ["BROOD", "KAAS", "APPEL", "PEER", "BANAAN", "SOEP", "PASTA", "MELK", "BOTER", "SUIKER", "HONING", "TOMAAT", "WORTEL", "AARDBEI", "KOEKJE", "PANNENKOEK", "FRIET", "PIZZA", "YOGHURT", "DRUIF", "CITROEN", "KERS", "SINAASAPPEL", "KOMKOMMER"] },
+    { "id": "school", "title": "School", "words": ["PEN", "POTLOOD", "SCHRIFT", "BOEK", "TAS", "JUF", "MEESTER", "KLAS", "BORD", "GUM", "LINIAAL", "SCHAAR", "PAUZE", "REKENEN", "LEZEN", "TAAL", "TOETS", "LOKAAL", "ATLAS", "PLEIN", "GYMZAAL", "STOEL", "TAFEL", "LES"] },
+    { "id": "sport", "title": "Sport", "words": ["ZWEMMEN", "TENNIS", "HOCKEY", "JUDO", "TURNEN", "SCHAATSEN", "FIETSEN", "VOLLEYBAL", "BASKETBAL", "HARDLOPEN", "KORFBAL", "DAMMEN", "SCHAKEN", "ROEIEN", "BOKSEN", "KARATE", "DANSEN", "ZEILEN", "GOLF", "RUGBY", "HANDBAL", "SKIEN", "KLIMMEN"] }
+  ]
+}

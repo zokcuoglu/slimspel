@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Woordzoeker · Slimspel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Andika:wght@400;700&family=Fredoka:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="../css/site.css">
+<style>
+/* Page-specific styles for the word search */
+.label{font-family:var(--f-display);font-weight:600;margin-top:22px;margin-bottom:8px}
+.choice{display:flex;flex-wrap:wrap;gap:8px}
+.choice .chip{font-size:17px;padding:8px 16px}
+.records{margin-top:18px;color:var(--muted);font-size:15px}
+.today{margin-top:14px;font-family:var(--f-display);font-weight:600}
+
+.bar{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.game{display:grid;grid-template-columns:minmax(0,1fr) 190px;gap:18px;align-items:start}
+@media (max-width:640px){.game{grid-template-columns:1fr}}
+
+/* The letter grid. touch-action:none so dragging a finger selects instead of scrolling. */
+.letters{--n:8;display:grid;grid-template-columns:repeat(var(--n),1fr);width:min(100%,480px);aspect-ratio:1;margin:0 auto;background:var(--card);border:3px solid var(--ink);border-radius:12px;padding:6px;gap:2px;touch-action:none;user-select:none;-webkit-user-select:none}
+.lt{display:grid;place-items:center;border-radius:8px;font-family:var(--f-display);font-weight:600;font-size:clamp(14px,3.6vw,24px);cursor:pointer}
+.lt.pick{background:var(--accent);color:var(--accent-ink)}     /* being selected now */
+.lt.start{outline:3px solid var(--ink);outline-offset:-3px}    /* first letter chosen, waiting for the last one */
+.lt.blink{animation:blink .5s ease 3}
+@keyframes blink{50%{background:var(--accent)}}
+/* Found words: each gets its own soft colour */
+.lt.f0{background:#cfe8ff}.lt.f1{background:#d6f5d6}.lt.f2{background:#ffe0b8}.lt.f3{background:#f2d4ff}.lt.f4{background:#ffd6dc}
+.lt.f5{background:#d4f2ee}.lt.f6{background:#fff3b0}.lt.f7{background:#e2e2ff}.lt.f8{background:#e8f5c8}.lt.f9{background:#ffdcc9}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .lt[class*=" f"]{color:#1d2a4d}}
+
+.words{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.words li{background:var(--card);border:2px solid var(--line);border-radius:10px;padding:6px 12px;font-family:var(--f-display);font-weight:600;letter-spacing:.04em}
+.words li.found{text-decoration:line-through;color:var(--muted);background:var(--good-bg);border-color:var(--good-bg)}
+.tools{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}
+
+.big{font-family:var(--f-display);font-weight:700;font-size:clamp(40px,10vw,60px);line-height:1.1}
+.record{display:inline-block;background:var(--accent);color:var(--accent-ink);font-family:var(--f-display);font-weight:600;border-radius:99px;padding:3px 12px;margin-top:8px}
+</style>
+</head>
+<body>
+<!-- Covers the page until js/core.js has checked the login (see index.html of the site) -->
+<div id="gate"><div class="gc"><p>Laden…</p></div></div>
+<script>
+setTimeout(() => {
+  if (window.__slimReady) return;
+  document.querySelector("#gate .gc").innerHTML =
+    "<h2>Laden lukt niet</h2><p>Ververs de pagina. Gaat het nog steeds mis? Vraag het aan Zana.</p>";
+}, 10000);
+</script>
+<main class="wrap">
+  <div class="top">
+    <a class="back" href="../">← Slimspel</a>
+    <span id="user"></span>
+  </div>
+
+  <!-- Screen 1: level -->
+  <section id="setup">
+    <h1><mark>Woord</mark>zoeker</h1>
+    <p class="sub">Zoek alle woorden in het rooster. Klik op de eerste en de laatste letter, of sleep eroverheen.<br>Elke dag is er per niveau één nieuwe puzzel, voor iedereen dezelfde.</p>
+    <div class="label">Niveau</div>
+    <div class="choice" id="levels"></div>
+    <p class="sub" id="levelInfo"></p>
+    <p class="today" id="today" hidden></p>
+    <div class="row" style="margin-top:18px"><button class="btn primary" id="go">Start</button></div>
+    <p class="records" id="records"></p>
+    <div class="board-box"><h3>Vandaag</h3><div id="board1"></div></div>
+  </section>
+
+  <!-- Screen 2: the puzzle -->
+  <section id="play" hidden>
+    <div class="bar">
+      <span class="chip" id="what"></span>
+      <span class="chip" id="count"></span>
+      <span class="chip" id="clock">0:00</span>
+    </div>
+    <div class="game">
+      <div class="letters" id="letters"></div>
+      <div>
+        <ul class="words" id="words"></ul>
+        <div class="tools">
+          <button class="btn" id="hint">Hint</button>
+          <button class="btn" id="stop">← Terug</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Screen 3: all words found -->
+  <section id="done" hidden>
+    <div class="panel">
+      <div class="big">Alles gevonden!</div>
+      <p class="sub" id="resultText"></p>
+      <span class="record" id="record" hidden></span>
+      <div class="board-box"><h3>Vandaag</h3><div id="board2"></div></div>
+    </div>
+    <div class="row" style="margin-top:16px">
+      <button class="btn primary" id="change">Ander niveau van vandaag</button>
+    </div>
+  </section>
+</main>
+
+<script type="module">
+import { gate, userBox, saveAttempt, loadAttempts, flash, loadLocal, saveLocal, postScore, loadBoard, boardHtml, today } from "../js/core.js";
+import { makePuzzle, seededRandom, LEVEL, lineCells } from "./engine.js";
+
+const MODULE = "slimspel-woordzoeker";
+const LEVELS = { makkelijk: "Makkelijk", normaal: "Normaal", moeilijk: "Moeilijk" };
+const LEVEL_INFO = {
+  makkelijk: "8 × 8 · woorden van links naar rechts en van boven naar beneden.",
+  normaal: "10 × 10 · ook schuin naar beneden.",
+  moeilijk: "12 × 12 · alle richtingen, ook achterstevoren."
+};
+const $ = id => document.getElementById(id);
+
+const { user, profile } = await gate({ seen: MODULE });
+$("user").innerHTML = userBox(user, profile);
+
+// Children see two levels, adults all three
+const levels = profile.type === "child" ? ["makkelijk", "normaal"] : Object.keys(LEVELS);
+const bank = await fetch("woorden.json", { cache: "no-cache" }).then(r => r.json());
+
+// Earlier rounds: for "already done today" and the records (wait for them, see sudoku)
+let history = [];
+try { history = await loadAttempts(user.uid, MODULE); } catch {}
+
+let level = loadLocal("woordzoeker:level", "makkelijk");
+if (!levels.includes(level)) level = "makkelijk";
+let S = null;
+
+const fmt = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+const solvedToday = lv => history.find(h => h.test === lv && h.day === today());
+const progressKey = (day, lv) => `woordzoeker:progress:${day}:${lv}`;
+try { // forget unfinished puzzles of earlier days
+  Object.keys(localStorage).filter(k => k.startsWith("slimspel:woordzoeker:progress:") && !k.includes(today()))
+    .forEach(k => localStorage.removeItem(k));
+} catch {}
+
+// ---------- Screen 1 ----------
+function drawSetup() {
+  $("levels").innerHTML = levels.map(l =>
+    `<button class="chip${l === level ? " on" : ""}" data-v="${l}">${LEVELS[l]}${solvedToday(l) ? " ✓" : ""}</button>`).join("");
+  $("levels").querySelectorAll("button").forEach(b => b.onclick = () => { level = b.dataset.v; saveLocal("woordzoeker:level", level); drawSetup(); });
+  $("levelInfo").textContent = LEVEL_INFO[level];
+  const done = solvedToday(level);
+  $("today").hidden = !done;
+  if (done) $("today").textContent = `Vandaag opgelost in ${fmt(done.time_s)}${done.hints ? ` met ${done.hints} hint${done.hints > 1 ? "s" : ""}` : ""}. Morgen is er een nieuwe puzzel!`;
+  $("go").disabled = !!done;
+  $("go").textContent = loadLocal(progressKey(today(), level), null) ? "Verder spelen" : "Start";
+  const t = history.filter(h => h.test === level && !h.hints).map(h => h.time_s);
+  $("records").textContent = t.length ? `Jouw record (zonder hints): ${fmt(Math.min(...t))}` : "Nog geen record voor dit niveau.";
+  drawBoard("board1", level);
+}
+async function drawBoard(elId, lv) {
+  const el = $(elId);
+  el.innerHTML = `<p class="board-empty">Laden…</p>`;
+  try { el.innerHTML = boardHtml(await loadBoard(today(), "woordzoeker-" + lv), user.uid); }
+  catch { el.innerHTML = `<p class="board-empty">De ranglijst is nu niet beschikbaar.</p>`; }
+}
+$("go").onclick = () => start();
+
+// ---------- Screen 2 ----------
+function show(s) { ["setup", "play", "done"].forEach(x => $(x).hidden = x !== s); }
+
+function start() {
+  const day = today();
+  if (solvedToday(level)) return drawSetup();
+  // Same seed for everybody on the same day -> the same puzzle for everybody
+  const P = makePuzzle(level, bank, seededRandom(`${day}|woordzoeker|${level}`));
+  const saved = loadLocal(progressKey(day, level), null);
+  S = { day, level, P, found: saved?.found || [], hintsUsed: saved?.hintsUsed || 0, elapsed: saved?.elapsed || 0,
+        resumedAt: Date.now(), done: false, startCell: -1, dragging: false };
+  S.timer = setInterval(tick, 500); tick();
+  $("what").textContent = `${P.theme.title} · ${LEVELS[level]}`;
+  $("letters").style.setProperty("--n", P.size);
+  $("letters").innerHTML = P.grid.map((ch, i) => `<div class="lt" data-i="${i}">${ch}</div>`).join("");
+  show("play");
+  draw();
+}
+const played = () => S.elapsed + Math.floor((Date.now() - S.resumedAt) / 1000);
+function tick() { $("clock").textContent = fmt(played()); }
+function saveProgress() {
+  if (!S || S.done) return;
+  saveLocal(progressKey(S.day, S.level), { found: S.found, hintsUsed: S.hintsUsed, elapsed: played() });
+}
+addEventListener("pagehide", saveProgress);
+document.addEventListener("visibilitychange", () => { if (document.hidden) saveProgress(); });
+
+// Colour found words, mark the chosen first letter, update the word list
+function draw(preview = []) {
+  const colour = {};
+  S.found.forEach(w => S.P.words[w].cells.forEach(i => colour[i] = "f" + (w % 10)));
+  const pv = new Set(preview);
+  [...$("letters").children].forEach((el, i) => {
+    el.className = "lt" + (colour[i] ? " " + colour[i] : "") + (pv.has(i) ? " pick" : "") + (i === S.startCell && !pv.size ? " start" : "");
+  });
+  $("words").innerHTML = S.P.words.map((w, k) => `<li class="${S.found.includes(k) ? "found" : ""}">${w.word}</li>`).join("");
+  $("count").textContent = `${S.found.length} / ${S.P.words.length}`;
+}
+
+// Did he select a hidden word? Letters may be read either way (from first to last or back).
+function trySelect(a, b) {
+  const cells = lineCells(S.P.size, a, b);
+  if (!cells) return false;
+  const text = cells.map(i => S.P.grid[i]).join("");
+  const k = S.P.words.findIndex((w, idx) => !S.found.includes(idx) &&
+    (w.word === text || w.word === [...text].reverse().join("")));
+  if (k < 0) {
+    cells.forEach(i => flash($("letters").children[i], "shake"));
+    return false;
+  }
+  S.found.push(k);
+  draw();
+  cells.forEach(i => flash($("letters").children[i], "pop"));
+  saveProgress();
+  if (S.found.length === S.P.words.length) finish();
+  return true;
+}
+
+// ---------- Selecting with mouse or finger ----------
+// Two ways: press on the first letter and drag to the last one,
+// or click the first letter, then click the last letter.
+const cellAt = (x, y) => { const el = document.elementFromPoint(x, y)?.closest(".lt"); return el ? Number(el.dataset.i) : -1; };
+$("letters").addEventListener("pointerdown", e => {
+  if (!S || S.done) return;
+  const i = cellAt(e.clientX, e.clientY); if (i < 0) return;
+  e.preventDefault();
+  if (S.startCell >= 0 && i !== S.startCell) { const a = S.startCell; S.startCell = -1; trySelect(a, i); draw(); return; }
+  S.startCell = i; S.dragging = true; S.dragEnd = i;
+  draw();
+});
+addEventListener("pointermove", e => {
+  if (!S?.dragging) return;
+  const i = cellAt(e.clientX, e.clientY); if (i < 0 || i === S.dragEnd) return;
+  S.dragEnd = i;
+  draw(lineCells(S.P.size, S.startCell, i) || []); // show the straight line he is dragging
+});
+addEventListener("pointerup", () => {
+  if (!S?.dragging) return;
+  S.dragging = false;
+  if (S.dragEnd !== S.startCell) { const a = S.startCell; S.startCell = -1; trySelect(a, S.dragEnd); }
+  draw(); // if he only clicked, the first letter stays marked and waits for the last one
+});
+
+// Hint: the first letter of a word he has not found yet blinks
+$("hint").onclick = () => {
+  if (!S || S.done) return;
+  const open = S.P.words.map((w, k) => k).filter(k => !S.found.includes(k));
+  if (!open.length) return;
+  const w = S.P.words[open[0]];
+  flash($("letters").children[w.cells[0]], "blink");
+  S.hintsUsed++;
+  saveProgress();
+};
+$("stop").onclick = () => { saveProgress(); clearInterval(S.timer); show("setup"); drawSetup(); };
+$("change").onclick = () => { show("setup"); drawSetup(); };
+
+// ---------- Screen 3 ----------
+function finish() {
+  S.done = true;
+  clearInterval(S.timer);
+  const time_s = played(), hints = S.hintsUsed, n = S.P.words.length;
+  const earlier = history.filter(h => h.test === S.level && !h.hints).map(h => h.time_s);
+  const prev = earlier.length ? Math.min(...earlier) : null;
+  saveLocal(progressKey(S.day, S.level), null);
+
+  // score = words found without a hint, total = words in the puzzle
+  const attempt = { test: S.level, day: S.day, theme: S.P.theme.id, score: Math.max(0, n - hints), total: n, hints, time_s,
+                    answers: [], finished_at: new Date().toISOString() };
+  history.unshift({ ...attempt, module: MODULE });
+  document.querySelector("#done .saveerr")?.remove();
+  saveAttempt(user.uid, MODULE, attempt).catch(e =>
+    $("resultText").insertAdjacentHTML("afterend", `<p class="saveerr">Score niet opgeslagen (${e.code || "fout"}).</p>`));
+  const posted = postScore(user, profile, S.day, "woordzoeker-" + S.level, time_s, hints).catch(() => {});
+
+  setTimeout(() => {
+    show("done");
+    $("resultText").textContent = `${S.P.theme.title} · ${LEVELS[S.level]} · ${n} woorden · tijd ${fmt(time_s)}` +
+      (hints ? ` · ${hints} hint${hints > 1 ? "s" : ""}` : " · zonder hints");
+    $("record").hidden = !!hints || (prev !== null && time_s >= prev);
+    $("record").textContent = prev === null ? "Eerste record!" : `Nieuw record! (was ${fmt(prev)})`;
+    posted.then(() => drawBoard("board2", S.level));
+  }, 900);
+}
+
+drawSetup();
+</script>
+</body>
+</html>
