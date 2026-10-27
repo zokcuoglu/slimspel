@@ -51,6 +51,42 @@ export async function loadAttempts(uid, module) {
     .sort((a, b) => (b.finished_at || "").localeCompare(a.finished_at || ""));
 }
 
+// ---------- Daily ranking ----------
+// leaderboard/{day}/entries/{key-uid}: one entry per child per daily puzzle (see nl-oefenbank/firestore.rules).
+// key = game + puzzle, e.g. "sudoku-4x4-makkelijk". Only children are listed.
+
+const entriesCol = day => collection(db, "leaderboard", day, "entries");
+
+// Write this child's result once. Adults are skipped (the list is for children only).
+// If an entry already exists the rules refuse the write; that is fine, the first result counts.
+export function postScore(user, profile, day, key, time_s, hints) {
+  if (profile.type !== "child") return Promise.resolve();
+  const name = (profile.name || user.displayName || "?").trim().split(/\s+/)[0]; // first name only
+  return setDoc(doc(entriesCol(day), `${key}-${user.uid}`), {
+    uid: user.uid, name: name.slice(0, 40), key,
+    time_s: Math.max(1, Math.round(time_s)), hints: Math.round(hints), at: new Date().toISOString()
+  });
+}
+
+// Today's ranking for one puzzle: fewest hints first, then fastest
+export async function loadBoard(day, key) {
+  const snap = await getDocs(query(entriesCol(day), where("key", "==", key)));
+  return snap.docs.map(d => d.data()).sort((a, b) => a.hints - b.hints || a.time_s - b.time_s);
+}
+
+// HTML for the ranking list; the viewer's own line is highlighted
+export function boardHtml(list, myUid) {
+  if (!list.length) return `<p class="board-empty">Nog niemand heeft deze puzzel vandaag opgelost.</p>`;
+  const medal = ["🥇", "🥈", "🥉"];
+  const t = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  return `<ol class="ranking">${list.slice(0, 10).map((e, i) => `<li class="${e.uid === myUid ? "me" : ""}">
+    <span class="pos">${medal[i] || i + 1}</span><span class="nm">${esc(e.name)}</span>
+    <span class="tm">${t(e.time_s)}${e.hints ? ` · ${e.hints} hint${e.hints > 1 ? "s" : ""}` : ""}</span></li>`).join("")}</ol>`;
+}
+
+// Today's date in the Netherlands (YYYY-MM-DD): daily puzzles change at midnight Dutch time
+export const today = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Amsterdam" }).format(new Date());
+
 // ---------- Small helpers used by the games ----------
 
 // Random whole number from min to max (both included)

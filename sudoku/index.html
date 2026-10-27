@@ -70,6 +70,7 @@ setTimeout(() => {
     <p class="today" id="today" hidden></p>
     <div class="row" style="margin-top:18px"><button class="btn primary" id="go">Start</button></div>
     <p class="records" id="records"></p>
+    <div class="board-box"><h3>Vandaag</h3><div id="board1"></div></div>
   </section>
 
   <!-- Screen 2: the puzzle -->
@@ -93,6 +94,7 @@ setTimeout(() => {
       <div class="big">Opgelost!</div>
       <p class="sub" id="resultText"></p>
       <span class="record" id="record" hidden></span>
+      <div class="board-box"><h3>Vandaag</h3><div id="board2"></div></div>
     </div>
     <div class="row" style="margin-top:16px">
       <button class="btn primary" id="change">Andere puzzel van vandaag</button>
@@ -101,7 +103,7 @@ setTimeout(() => {
 </main>
 
 <script type="module">
-import { gate, userBox, saveAttempt, loadAttempts, flash, loadLocal, saveLocal } from "../js/core.js";
+import { gate, userBox, saveAttempt, loadAttempts, flash, loadLocal, saveLocal, postScore, loadBoard, boardHtml, today } from "../js/core.js";
 import { makePuzzle, conflicts, peers, units, seededRandom } from "./engine.js";
 
 const MODULE = "slimspel-sudoku";
@@ -114,8 +116,6 @@ $("user").innerHTML = userBox(user, profile);
 // Children see two levels, adults all three
 const levels = profile.type === "child" ? ["makkelijk", "normaal"] : Object.keys(LEVELS);
 
-// Today's date in the Netherlands (YYYY-MM-DD): the new puzzles start at midnight Dutch time
-const today = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Amsterdam" }).format(new Date());
 
 // Earlier solved puzzles: for "already done today" and the records.
 // We wait for them, otherwise he could start a puzzle he already solved today.
@@ -157,6 +157,15 @@ function drawSetup() {
   $("go").disabled = !!done;
   $("go").textContent = loadLocal(progressKey(today(), testOf(size, level)), null) ? "Verder spelen" : "Start";
   drawRecords();
+  drawBoard("board1", testOf(size, level));
+}
+
+// Today's ranking for one puzzle (children only). If it cannot be read, say so quietly.
+async function drawBoard(elId, test) {
+  const el = $(elId);
+  el.innerHTML = `<p class="board-empty">Laden…</p>`;
+  try { el.innerHTML = boardHtml(await loadBoard(today(), "sudoku-" + test), user.uid); }
+  catch { el.innerHTML = `<p class="board-empty">De ranglijst is nu niet beschikbaar.</p>`; }
 }
 // Fastest time without hints for the chosen size and level
 function best(test) {
@@ -289,12 +298,16 @@ function checkSolved() {
   saveAttempt(user.uid, MODULE, attempt).catch(e =>
     $("resultText").insertAdjacentHTML("afterend", `<p class="saveerr">Score niet opgeslagen (${e.code || "fout"}).</p>`));
 
+  // Daily ranking (children only); first solve of the day counts. Then show the list.
+  const posted = postScore(user, profile, S.day, "sudoku-" + S.test, time_s, hints).catch(() => {});
+
   setTimeout(() => { // let him see the green board for a moment
     show("done");
     $("resultText").textContent = `${S.size} × ${S.size} · ${LEVELS[S.level]} · tijd ${fmt(time_s)}` +
       (hints ? ` · ${hints} hint${hints > 1 ? "s" : ""}` : " · zonder hints");
     $("record").hidden = !!hints || (prev !== null && time_s >= prev);
     $("record").textContent = prev === null ? "Eerste record!" : `Nieuw record! (was ${fmt(prev)})`;
+    posted.then(() => drawBoard("board2", S.test));
   }, 1300);
 }
 

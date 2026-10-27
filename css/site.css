@@ -89,3 +89,14 @@ a.card:hover{border-color:var(--ink);transform:translateY(-2px)}
 #gate .tiles .btn{padding:18px 10px}
 #gate .err{background:var(--bad-bg);color:var(--bad);border-radius:10px;padding:10px 12px}
 .saveerr{color:var(--bad);font-size:14px;margin:8px 0 0}
+
+/* Daily ranking list ("Vandaag") */
+.board-box{margin-top:18px}
+.board-box h3{font-size:18px;margin-bottom:8px}
+.ranking{list-style:none;margin:0;padding:0;display:grid;gap:6px;max-width:420px}
+.ranking li{display:flex;align-items:center;gap:10px;background:var(--card);border:2px solid var(--line);border-radius:10px;padding:6px 12px}
+.ranking li.me{border-color:var(--ink);background:color-mix(in srgb,var(--accent) 25%,var(--card))}
+.ranking .pos{width:28px;text-align:center;font-family:var(--f-display);font-weight:700}
+.ranking .nm{flex:1;font-weight:700}
+.ranking .tm{color:var(--muted);font-variant-numeric:tabular-nums}
+.board-empty{color:var(--muted);margin:0}
