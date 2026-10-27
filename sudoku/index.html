@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sudoku · Slimspel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Andika:wght@400;700&family=Fredoka:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="../css/site.css">
+<style>
+/* Page-specific styles for sudoku */
+.label{font-family:var(--f-display);font-weight:600;margin-top:22px;margin-bottom:8px}
+.choice{display:flex;flex-wrap:wrap;gap:8px}
+.choice .chip{font-size:17px;padding:8px 16px}
+.records{margin-top:18px;color:var(--muted);font-size:15px}
+
+/* The grid: thick lines between boxes, thin lines inside a box */
+.board{--n:4;display:grid;grid-template-columns:repeat(var(--n),1fr);width:min(100%,420px);aspect-ratio:1;margin:0 auto;border:3px solid var(--ink);border-radius:10px;overflow:hidden;background:var(--card)}
+.cell{display:grid;place-items:center;border:0;border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--card);font-family:var(--f-display);font-weight:600;font-size:clamp(24px,7vw,38px);color:var(--ink);padding:0;font-variant-numeric:tabular-nums}
+.cell.br{border-right:3px solid var(--ink)}   /* right edge of a box */
+.cell.bb{border-bottom:3px solid var(--ink)}  /* bottom edge of a box */
+.cell.given{background:var(--paper);font-weight:700}
+.cell.mine{color:#2f5bd3}                     /* numbers he typed: blue pen */
+.cell.hint{color:var(--muted);font-style:italic}
+.cell.same{background:color-mix(in srgb,var(--accent) 22%,var(--card))}  /* row, column and box of the selected cell */
+.cell.sel{background:var(--accent);color:var(--accent-ink)}
+.cell.bad{background:var(--bad-bg);color:var(--bad)}
+.cell:focus-visible{outline:none}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .cell.mine{color:#8fb0ff}}
+
+.bar{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px}
+.pad{display:grid;grid-template-columns:repeat(var(--n),1fr);gap:8px;width:min(100%,420px);margin:16px auto 0}
+.pad button{background:var(--card);border:2px solid var(--line);border-radius:12px;padding:10px 0;font-family:var(--f-display);font-weight:600;font-size:24px}
+.pad button:hover{border-color:var(--ink)}
+.tools{display:flex;justify-content:center;gap:10px;margin-top:12px;flex-wrap:wrap}
+
+.big{font-family:var(--f-display);font-weight:700;font-size:clamp(40px,10vw,60px);line-height:1.1}
+.record{display:inline-block;background:var(--accent);color:var(--accent-ink);font-family:var(--f-display);font-weight:600;border-radius:99px;padding:3px 12px;margin-top:8px}
+</style>
+</head>
+<body>
+<!-- Covers the page until js/core.js has checked the login (see index.html of the site) -->
+<div id="gate"><div class="gc"><p>Laden…</p></div></div>
+<script>
+setTimeout(() => {
+  if (window.__slimReady) return;
+  document.querySelector("#gate .gc").innerHTML =
+    "<h2>Laden lukt niet</h2><p>Ververs de pagina. Gaat het nog steeds mis? Vraag het aan Zana.</p>";
+}, 10000);
+</script>
+<main class="wrap">
+  <div class="top">
+    <a class="back" href="../">← Slimspel</a>
+    <span id="user"></span>
+  </div>
+
+  <!-- Screen 1: size and level -->
+  <section id="setup">
+    <h1><mark>Sudoku</mark></h1>
+    <p class="sub">Elk getal mag maar één keer in elke rij, elke kolom en elk blok.</p>
+    <div class="label">Grootte</div>
+    <div class="choice" id="sizes"></div>
+    <div class="label">Niveau</div>
+    <div class="choice" id="levels"></div>
+    <div class="row" style="margin-top:22px"><button class="btn primary" id="go">Start</button></div>
+    <p class="records" id="records"></p>
+  </section>
+
+  <!-- Screen 2: the puzzle -->
+  <section id="play" hidden>
+    <div class="bar">
+      <span class="chip" id="what"></span>
+      <span class="chip" id="clock">0:00</span>
+    </div>
+    <div class="board" id="board"></div>
+    <div class="pad" id="pad"></div>
+    <div class="tools">
+      <button class="btn" id="hint">Hint</button>
+      <button class="btn" id="restart">Opnieuw</button>
+      <button class="btn" id="stop">Andere puzzel</button>
+    </div>
+  </section>
+
+  <!-- Screen 3: solved -->
+  <section id="done" hidden>
+    <div class="panel">
+      <div class="big">Opgelost!</div>
+      <p class="sub" id="resultText"></p>
+      <span class="record" id="record" hidden></span>
+    </div>
+    <div class="row" style="margin-top:16px">
+      <button class="btn primary" id="again">Nieuwe puzzel</button>
+      <button class="btn" id="change">Ander niveau</button>
+    </div>
+  </section>
+</main>
+
+<script type="module">
+import { gate, userBox, saveAttempt, loadAttempts, flash, loadLocal, saveLocal } from "../js/core.js";
+import { makePuzzle, conflicts, peers } from "./engine.js";
+
+const MODULE = "slimspel-sudoku";
+const LEVELS = { makkelijk: "Makkelijk", normaal: "Normaal", moeilijk: "Moeilijk" };
+const $ = id => document.getElementById(id);
+
+const { user, profile } = await gate({ seen: MODULE });
+$("user").innerHTML = userBox(user, profile);
+
+// Children see two levels, adults all three
+const levels = profile.type === "child" ? ["makkelijk", "normaal"] : Object.keys(LEVELS);
+
+// Earlier solved puzzles: for the fastest-time records
+let history = [];
+loadAttempts(user.uid, MODULE).then(l => { history = l; drawRecords(); }).catch(() => {});
+
+let size = loadLocal("sudoku:size", 4);
+let level = loadLocal("sudoku:level", "makkelijk");
+if (!levels.includes(level)) level = "makkelijk";
+let S = null; // the puzzle being played
+
+const fmt = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+const testId = () => `${size}x${size}-${level}`;
+
+// ---------- Screen 1 ----------
+function chips(el, items, current, onPick) {
+  el.innerHTML = items.map(([v, t]) => `<button class="chip${v === current ? " on" : ""}" data-v="${v}">${t}</button>`).join("");
+  el.querySelectorAll("button").forEach(b => b.onclick = () => onPick(b.dataset.v));
+}
+function drawSetup() {
+  chips($("sizes"), [[4, "4 × 4"], [6, "6 × 6"]], size, v => { size = Number(v); saveLocal("sudoku:size", size); drawSetup(); });
+  chips($("levels"), levels.map(l => [l, LEVELS[l]]), level, v => { level = v; saveLocal("sudoku:level", level); drawSetup(); });
+  drawRecords();
+}
+// Fastest time without hints for the chosen size and level
+function best(test) {
+  const t = history.filter(h => h.test === test && !h.hints).map(h => h.time_s);
+  return t.length ? Math.min(...t) : null;
+}
+function drawRecords() {
+  const b = best(testId());
+  $("records").textContent = b === null ? "Nog geen record voor deze puzzel." : `Jouw record (zonder hints): ${fmt(b)}`;
+}
+$("go").onclick = () => start();
+
+// ---------- Screen 2 ----------
+function show(s) { ["setup", "play", "done"].forEach(x => $(x).hidden = x !== s); }
+
+function start() {
+  const { puzzle, solution } = makePuzzle(size, level);
+  S = { size, level, puzzle, solution, grid: puzzle.slice(), hinted: new Set(), sel: puzzle.indexOf(0),
+        startedAt: Date.now(), done: false };
+  S.empty = puzzle.filter(n => !n).length;
+  clearInterval(S.timer);
+  S.timer = setInterval(() => $("clock").textContent = fmt(Math.floor((Date.now() - S.startedAt) / 1000)), 500);
+  $("clock").textContent = "0:00";
+  $("what").textContent = `${size} × ${size} · ${LEVELS[level]}`;
+  // Build the cells once; draw() only changes their classes and text
+  const [br, bc] = size === 4 ? [2, 2] : [2, 3];
+  $("board").style.setProperty("--n", size);
+  $("pad").style.setProperty("--n", size);
+  $("board").innerHTML = puzzle.map((_, i) => {
+    const r = Math.floor(i / size), c = i % size;
+    const edge = (c % bc === bc - 1 && c < size - 1 ? " br" : "") + (r % br === br - 1 && r < size - 1 ? " bb" : "");
+    return `<button class="cell${edge}" data-i="${i}" aria-label="rij ${r + 1}, kolom ${c + 1}"></button>`;
+  }).join("");
+  $("board").querySelectorAll(".cell").forEach(b => b.onclick = () => { S.sel = Number(b.dataset.i); draw(); });
+  $("pad").innerHTML = [...Array(size)].map((_, k) => `<button data-n="${k + 1}">${k + 1}</button>`).join("") ;
+  $("pad").querySelectorAll("button").forEach(b => b.onclick = () => put(Number(b.dataset.n)));
+  show("play");
+  draw();
+}
+
+function draw() {
+  const bad = conflicts(S.grid, S.size);
+  const near = new Set(S.sel >= 0 ? peers(S.size, S.sel) : []);
+  $("board").querySelectorAll(".cell").forEach((b, i) => {
+    const n = S.grid[i];
+    b.textContent = n || "";
+    b.className = b.className.replace(/ (given|mine|hint|same|sel|bad)/g, "");
+    if (S.puzzle[i]) b.classList.add("given");
+    else if (S.hinted.has(i)) b.classList.add("hint");
+    else if (n) b.classList.add("mine");
+    if (i === S.sel) b.classList.add("sel");
+    else if (near.has(i)) b.classList.add("same");
+    if (bad.has(i)) b.classList.add("bad"); // rule broken: same number twice in a row, column or box
+  });
+}
+
+// Put a number (0 = clear) in the selected cell; given and hinted cells stay as they are
+function put(n) {
+  if (!S || S.done || S.sel < 0 || S.puzzle[S.sel] || S.hinted.has(S.sel)) return;
+  S.grid[S.sel] = S.grid[S.sel] === n ? 0 : n; // typing the same number again clears it
+  draw();
+  if (conflicts(S.grid, S.size).has(S.sel)) flash($("board").children[S.sel], "shake");
+  checkSolved();
+}
+
+// Hint: fill the selected cell if it is empty or wrong, otherwise the first one that is
+function hint() {
+  if (!S || S.done) return;
+  const open = i => !S.puzzle[i] && !S.hinted.has(i) && S.grid[i] !== S.solution[i];
+  const i = open(S.sel) ? S.sel : S.grid.findIndex((_, k) => open(k));
+  if (i < 0) return;
+  S.grid[i] = S.solution[i];
+  S.hinted.add(i);
+  S.sel = i;
+  draw();
+  checkSolved();
+}
+
+// The puzzle has one solution, so a full grid with no broken rules IS that solution
+function checkSolved() {
+  if (S.grid.some(n => !n) || conflicts(S.grid, S.size).size) return;
+  S.done = true;
+  clearInterval(S.timer);
+  const time_s = Math.floor((Date.now() - S.startedAt) / 1000);
+  const hints = S.hinted.size;
+  const test = `${S.size}x${S.size}-${S.level}`;
+  const prev = best(test);
+
+  // score = cells he filled himself, total = cells that were empty.
+  // answers stays empty: single cells are not useful in the admin "hardest questions" list.
+  const attempt = { test, size: S.size, level: S.level, score: S.empty - hints, total: S.empty, hints, time_s,
+                    answers: [], started_at: new Date(S.startedAt).toISOString(), finished_at: new Date().toISOString() };
+  history.unshift({ ...attempt, module: MODULE });
+  document.querySelector("#done .saveerr")?.remove();
+  saveAttempt(user.uid, MODULE, attempt).catch(e =>
+    $("resultText").insertAdjacentHTML("afterend", `<p class="saveerr">Score niet opgeslagen (${e.code || "fout"}).</p>`));
+
+  setTimeout(() => { // let him see the full grid for a moment
+    show("done");
+    $("resultText").textContent = `${S.size} × ${S.size} · ${LEVELS[S.level]} · tijd ${fmt(time_s)}` +
+      (hints ? ` · ${hints} hint${hints > 1 ? "s" : ""}` : " · zonder hints");
+    $("record").hidden = !!hints || (prev !== null && time_s >= prev);
+    $("record").textContent = prev === null ? "Eerste record!" : `Nieuw record! (was ${fmt(prev)})`;
+  }, 900);
+}
+
+// Keyboard: numbers, Backspace/Delete/0 to clear, arrow keys to move
+document.addEventListener("keydown", e => {
+  if (!S || $("play").hidden) return;
+  const n = Number(e.key);
+  if (n >= 1 && n <= S.size) put(n);
+  else if (["Backspace", "Delete", "0"].includes(e.key)) put(0);
+  else {
+    const mv = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -S.size, ArrowDown: S.size }[e.key];
+    if (mv === undefined) return;
+    e.preventDefault();
+    S.sel = Math.min(S.grid.length - 1, Math.max(0, (S.sel < 0 ? 0 : S.sel) + mv));
+    draw();
+  }
+});
+
+$("hint").onclick = hint;
+$("restart").onclick = () => { S.grid = S.puzzle.slice(); S.hinted.clear(); draw(); };
+$("stop").onclick = () => { clearInterval(S.timer); show("setup"); drawSetup(); };
+$("again").onclick = () => start();
+$("change").onclick = () => { show("setup"); drawSetup(); };
+
+drawSetup();
+</script>
+</body>
+</html>
