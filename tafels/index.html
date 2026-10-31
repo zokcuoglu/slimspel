@@ -62,6 +62,9 @@ setTimeout(() => {
 
     <div class="label">Tafels</div>
     <div class="tables" id="tables"></div>
+    <!-- New level: harder tables 11 to 15, shown in their own row so the basic tables stay simple -->
+    <div class="label">Moeilijker: tafels 11 t/m 15</div>
+    <div class="tables" id="extraTables"></div>
     <div class="row">
       <button class="btn" id="all">Alles</button>
       <button class="btn" id="none">Geen</button>
@@ -135,23 +138,29 @@ loadAttempts(user.uid, MODULE).then(list => history = list).catch(() => {});
 // Groep 1-4, unknown groep and adults: all tables.
 const g = groepNr(profile);
 const TABLES = profile.type === "child" && g !== null && g >= 5 ? [3, 4, 5, 6, 7, 8, 9] : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+// Extra level for everyone: tables 11-15 (answers up to 150, still fits the 3-digit input)
+const EXTRA = [11, 12, 13, 14, 15];
+const OFFERED = [...TABLES, ...EXTRA];
 
 // Remember the last chosen tables (this browser only) so he doesn't have to click them every time.
 // Drop any that are no longer offered (e.g. after moving up a groep).
-let chosen = new Set(loadLocal("tafels:chosen", [3, 4, 5]).filter(t => TABLES.includes(t)));
+let chosen = new Set(loadLocal("tafels:chosen", [3, 4, 5]).filter(t => OFFERED.includes(t)));
 if (!chosen.size) chosen = new Set([3, 4, 5]);
 let state = null; // everything about the round that is running
 
 // ---------- Screen 1: setup ----------
 function drawTables() {
-  $("tables").innerHTML = "";
-  for (const t of TABLES) {
-    const b = document.createElement("button");
-    b.className = "chip" + (chosen.has(t) ? " on" : "");
-    b.textContent = t;
-    b.setAttribute("aria-pressed", chosen.has(t));
-    b.onclick = () => { chosen.has(t) ? chosen.delete(t) : chosen.add(t); saveChosen(); };
-    $("tables").appendChild(b);
+  // One toggle chip per table: basic tables in the first row, 11-15 in the second
+  for (const [box, list] of [["tables", TABLES], ["extraTables", EXTRA]]) {
+    $(box).innerHTML = "";
+    for (const t of list) {
+      const b = document.createElement("button");
+      b.className = "chip" + (chosen.has(t) ? " on" : "");
+      b.textContent = t;
+      b.setAttribute("aria-pressed", chosen.has(t));
+      b.onclick = () => { chosen.has(t) ? chosen.delete(t) : chosen.add(t); saveChosen(); };
+      $(box).appendChild(b);
+    }
   }
   // Can't start without at least one table
   document.querySelectorAll(".mode").forEach(m => m.disabled = chosen.size === 0);
