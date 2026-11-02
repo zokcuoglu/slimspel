@@ -10,20 +10,44 @@
 <style>
 /* Page-specific styles for 2048 */
 .bar{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:14px 0;flex-wrap:wrap}
-.board{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;width:min(100%,420px);aspect-ratio:1;margin:0 auto;background:var(--line);border-radius:14px;padding:10px;touch-action:none;user-select:none}
-.t{display:grid;place-items:center;border-radius:10px;background:color-mix(in srgb,var(--card) 70%,var(--line));font-family:var(--f-display);font-weight:700;font-size:clamp(22px,7vw,36px);font-variant-numeric:tabular-nums}
+.how{background:var(--card);border:2px solid var(--line);border-radius:12px;padding:10px 14px;margin-top:12px;font-size:15px}
+.how summary{cursor:pointer;font-family:var(--f-display);font-weight:600}
+.how ol{margin:8px 0 0;padding-left:20px}
+.how li{margin:3px 0}
+
+/* The board: 16 empty squares underneath, the tiles float on top and slide */
+.board{--gap:10px;position:relative;width:min(100%,420px);aspect-ratio:1;margin:0 auto;background:var(--line);border-radius:14px;padding:var(--gap);touch-action:none;user-select:none;-webkit-user-select:none}
+.under{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--gap);width:100%;height:100%}
+.under div{border-radius:10px;background:color-mix(in srgb,var(--line) 70%,var(--muted))}  /* empty squares: clearly darker than a tile */
+.layer{position:absolute;inset:var(--gap)}
+/* A tile is one square big; translate moves it to its row and column (100% = one tile) */
+.t{position:absolute;top:0;left:0;width:calc((100% - 3 * var(--gap)) / 4);height:calc((100% - 3 * var(--gap)) / 4);
+   transform:translate(calc(var(--c) * (100% + var(--gap))),calc(var(--r) * (100% + var(--gap))));
+   transition:transform .13s ease-in-out;display:grid;place-items:center;border-radius:10px;
+   font-family:var(--f-display);font-weight:700;font-size:clamp(22px,7vw,36px);font-variant-numeric:tabular-nums}
+.t span{display:grid;place-items:center;width:100%;height:100%;border-radius:10px;box-shadow:0 2px 0 rgba(0,0,0,.18)}
 .t.big3{font-size:clamp(18px,5.5vw,30px)}.t.big4{font-size:clamp(15px,4.5vw,24px)}
 /* Colours get warmer as the number grows */
-.t.v2{background:#eef3fb;color:#1d2a4d}.t.v4{background:#dce7f8;color:#1d2a4d}.t.v8{background:#ffe7a3;color:#1d2a4d}
-.t.v16{background:#ffd84d;color:#1d2a4d}.t.v32{background:#ffb24d;color:#1d2a4d}.t.v64{background:#ff8a4d;color:#fff}
-.t.v128{background:#7fd1a0;color:#123}.t.v256{background:#3fb57a;color:#fff}.t.v512{background:#2f8fd8;color:#fff}
-.t.v1024{background:#5b5bd6;color:#fff}.t.v2048{background:#c4372e;color:#fff}.t.vbig{background:#1d2a4d;color:#ffd84d}
-@keyframes appear{from{transform:scale(.4)}to{transform:scale(1)}}
-.t.new{animation:appear .15s ease-out}
-.t.merged{animation:pop .2s ease}
-@media (prefers-reduced-motion: reduce){.t.new,.t.merged{animation:none}}
-.records{margin-top:14px;color:var(--muted);font-size:15px;text-align:center}
-.msg{text-align:center;font-family:var(--f-display);font-weight:600;font-size:20px;min-height:1.6em;margin-top:12px}
+.t.v2 span{background:#ffffff;color:#1d2a4d}.t.v4 span{background:#dce7f8;color:#1d2a4d}.t.v8 span{background:#ffe7a3;color:#1d2a4d}
+.t.v16 span{background:#ffd84d;color:#1d2a4d}.t.v32 span{background:#ffb24d;color:#1d2a4d}.t.v64 span{background:#ff8a4d;color:#fff}
+.t.v128 span{background:#7fd1a0;color:#123}.t.v256 span{background:#3fb57a;color:#fff}.t.v512 span{background:#2f8fd8;color:#fff}
+.t.v1024 span{background:#5b5bd6;color:#fff}.t.v2048 span{background:#c4372e;color:#fff}.t.vbig span{background:#1d2a4d;color:#ffd84d}
+@keyframes appear{from{transform:scale(0)}to{transform:scale(1)}}
+@keyframes grow{0%{transform:scale(1)}50%{transform:scale(1.18)}100%{transform:scale(1)}}
+.t.new span{animation:appear .16s ease-out}
+.t.merged span{animation:grow .18s ease-out}
+.t.gone{z-index:0}.t{z-index:1}
+@media (prefers-reduced-motion: reduce){.t{transition:none}.t.new span,.t.merged span{animation:none}}
+
+/* Game over cover on the board */
+.over{position:absolute;inset:0;display:grid;place-items:center;align-content:center;gap:10px;background:color-mix(in srgb,var(--card) 80%,transparent);border-radius:14px;text-align:center;font-family:var(--f-display);font-weight:700;font-size:26px;z-index:5}
+
+.pad{display:grid;grid-template-columns:repeat(3,64px);grid-template-rows:repeat(2,52px);gap:6px;justify-content:center;margin-top:12px}
+.pad button{background:var(--card);border:2px solid var(--line);border-radius:12px;font-size:22px}
+.pad button:hover{border-color:var(--ink)}
+.pad .up{grid-column:2}.pad .left{grid-column:1;grid-row:2}.pad .down{grid-column:2;grid-row:2}.pad .right{grid-column:3;grid-row:2}
+.records{margin-top:10px;color:var(--muted);font-size:15px;text-align:center}
+.msg{text-align:center;font-family:var(--f-display);font-weight:600;font-size:20px;min-height:1.6em;margin-top:10px}
 </style>
 </head>
 <body>
@@ -42,14 +66,33 @@ setTimeout(() => {
     <span id="user"></span>
   </div>
   <h1><mark>2048</mark></h1>
-  <p class="sub">Schuif met de pijltjestoetsen (of veeg). Twee gelijke getallen worden samen één: 2 + 2 = 4, 4 + 4 = 8 … Kun je 2048 halen?</p>
+  <details class="how" id="how">
+    <summary>Hoe speel je het?</summary>
+    <ol>
+      <li>Druk op een pijltje (of veeg). <b>Alle</b> tegels schuiven dan zo ver mogelijk naar die kant.</li>
+      <li>Botsen twee tegels met <b>hetzelfde getal</b>? Dan worden ze één tegel: 2 + 2 = 4, 4 + 4 = 8, 8 + 8 = 16 …</li>
+      <li>Na elke zet komt er een nieuwe 2 (of soms een 4) bij.</li>
+      <li>Probeer de tegel 2048 te maken. Het spel is voorbij als het bord vol is en er niets meer kan schuiven.</li>
+      <li>Tip: houd je grootste getal in een hoek.</li>
+    </ol>
+  </details>
 
   <div class="bar">
     <span class="chip" id="score">0 punten</span>
     <span class="chip" id="best">record: -</span>
     <button class="btn" id="new">Nieuw spel</button>
   </div>
-  <div class="board" id="board"></div>
+  <div class="board" id="board">
+    <div class="under"></div>
+    <div class="layer" id="layer"></div>
+    <div class="over" id="over" hidden><span id="overText"></span><button class="btn primary" id="again">Nieuw spel</button></div>
+  </div>
+  <div class="pad">
+    <button class="up" data-d="up" aria-label="omhoog">▲</button>
+    <button class="left" data-d="left" aria-label="links">◀</button>
+    <button class="down" data-d="down" aria-label="omlaag">▼</button>
+    <button class="right" data-d="right" aria-label="rechts">▶</button>
+  </div>
   <p class="msg" id="msg"></p>
   <p class="records" id="records"></p>
 </main>
@@ -58,7 +101,9 @@ setTimeout(() => {
 import { gate, userBox, saveAttempt, loadAttempts, loadLocal, saveLocal } from "../js/core.js";
 
 const MODULE = "slimspel-2048";
+const SLIDE_MS = 130; // same as the CSS transition
 const $ = id => document.getElementById(id);
+$("board").querySelector(".under").innerHTML = "<div></div>".repeat(16); // the 16 empty squares
 
 const { user, profile } = await gate({ seen: MODULE });
 $("user").innerHTML = userBox(user, profile);
@@ -68,91 +113,127 @@ loadAttempts(user.uid, MODULE).then(l => { history = l; drawBest(); }).catch(() 
 const best = () => history.length ? Math.max(...history.map(h => h.points || 0)) : null;
 function drawBest() { const b = best(); $("best").textContent = `record: ${b === null ? "-" : b}`; }
 
-// The board is 16 numbers (0 = empty), row by row. Kept in this browser, so a refresh does not lose the game.
-// fresh = tiles that just appeared, merged = tiles that just merged (for the small animations)
-let fresh = new Set(), merged = new Set();
-let G = loadLocal("2048:game", null);
-if (!G || !Array.isArray(G.cells) || G.cells.length !== 16) G = newGame();
+// ---------- Game state ----------
+// A tile = { id, v (value), r (row), c (column) }. Each tile keeps its id while it slides,
+// so the screen can move the same square smoothly instead of redrawing the board.
+// The game in progress is kept in this browser, per account (two children on one computer each have their own game).
+const SAVE_KEY = `2048:game:${user.uid}`;
+let G = loadLocal(SAVE_KEY, null);
+if (!G || !Array.isArray(G.tiles)) G = newGame();
+let busy = false;           // true while tiles are sliding: ignore new moves for that moment
+const els = new Map();      // tile id -> its element on screen
+
+// First visit: open the explanation once
+if (!loadLocal("2048:seenHow", false)) { $("how").open = true; saveLocal("2048:seenHow", true); }
 
 function newGame() {
-  const g = { cells: new Array(16).fill(0), points: 0, moves: 0, won: false, over: false, startedAt: Date.now() };
+  const g = { tiles: [], nextId: 1, points: 0, moves: 0, won: false, over: false, startedAt: Date.now() };
   addTile(g); addTile(g);
   return g;
 }
+// The tile on a square, or undefined (a function declaration, so it can be used before this line)
+function at(g, r, c) { return g.tiles.find(t => t.r === r && t.c === c); }
 // A new 2 (or sometimes a 4) on a random empty square
 function addTile(g) {
-  const empty = g.cells.map((v, i) => v ? -1 : i).filter(i => i >= 0);
-  if (!empty.length) return;
-  const i = empty[Math.floor(Math.random() * empty.length)];
-  g.cells[i] = Math.random() < 0.9 ? 2 : 4;
-  fresh.add(i);
+  const empty = [];
+  for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) if (!at(g, r, c)) empty.push([r, c]);
+  if (!empty.length) return null;
+  const [r, c] = empty[Math.floor(Math.random() * empty.length)];
+  const t = { id: g.nextId++, v: Math.random() < 0.9 ? 2 : 4, r, c, fresh: true };
+  g.tiles.push(t);
+  return t;
 }
 
-// Slide one line of 4 towards its start; equal neighbours merge once. Returns new line, points and merged spots.
-function slide(line) {
-  const nums = line.filter(Boolean), out = [], mergedAt = [];
-  let pts = 0;
-  for (let i = 0; i < nums.length; i++) {
-    if (nums[i] === nums[i + 1]) { out.push(nums[i] * 2); pts += nums[i] * 2; mergedAt.push(out.length - 1); i++; }
-    else out.push(nums[i]);
-  }
-  while (out.length < 4) out.push(0);
-  return { out, pts, mergedAt };
-}
-
-// The 4 lines for a direction, each as cell numbers starting at the side we slide towards
-function lines(dir) {
-  const L = [];
+// ---------- One move ----------
+// For each row (or column) we walk from the side we slide towards. A tile goes to the next free spot;
+// if the tile just placed there has the same value (and did not merge yet), the two merge into one.
+const VEC = { left: [0, -1], right: [0, 1], up: [-1, 0], down: [1, 0] };
+function plan(dir) {
+  const [dr, dc] = VEC[dir];
+  const moves = [];  // { tile, r, c, into } (into = the tile it merges with)
   for (let k = 0; k < 4; k++) {
-    if (dir === "left")  L.push([0, 1, 2, 3].map(j => k * 4 + j));
-    if (dir === "right") L.push([3, 2, 1, 0].map(j => k * 4 + j));
-    if (dir === "up")    L.push([0, 1, 2, 3].map(j => j * 4 + k));
-    if (dir === "down")  L.push([3, 2, 1, 0].map(j => j * 4 + k));
+    // the 4 squares of this line, starting at the wall we slide towards
+    const line = [0, 1, 2, 3].map(j => {
+      const p = dr === 0 ? [k, dc > 0 ? 3 - j : j] : [dr > 0 ? 3 - j : j, k];
+      return { r: p[0], c: p[1] };
+    });
+    let slot = 0, last = null;
+    for (const sq of line) {
+      const t = at(G, sq.r, sq.c);
+      if (!t) continue;
+      if (last && last.v === t.v && !last.merged) {
+        moves.push({ tile: t, r: last.r, c: last.c, into: last.tile });
+        last.merged = true;
+      } else {
+        const dest = line[slot++];
+        moves.push({ tile: t, r: dest.r, c: dest.c });
+        last = { v: t.v, r: dest.r, c: dest.c, tile: t, merged: false };
+      }
+    }
   }
-  return L;
+  const changed = moves.some(m => m.into || m.r !== m.tile.r || m.c !== m.tile.c);
+  return changed ? moves : null;
 }
 
 function move(dir) {
-  if (G.over) return;
-  fresh = new Set(); merged = new Set();
-  let changed = false;
-  for (const idx of lines(dir)) {
-    const { out, pts, mergedAt } = slide(idx.map(i => G.cells[i]));
-    idx.forEach((i, j) => { if (G.cells[i] !== out[j]) changed = true; G.cells[i] = out[j]; });
-    mergedAt.forEach(j => merged.add(idx[j]));
-    G.points += pts;
-  }
-  if (!changed) return; // nothing moved: no new tile
-  G.moves++;
-  addTile(G);
-  if (!G.won && G.cells.includes(2048)) { G.won = true; $("msg").textContent = "Je hebt 2048! Je mag doorspelen."; }
-  if (!canMove()) gameOver();
-  saveLocal("2048:game", G);
+  if (G.over || busy) return;
+  const moves = plan(dir);
+  if (!moves) { nudge(dir); return; } // nothing can slide that way
+  busy = true;
+  G.tiles.forEach(t => { delete t.fresh; delete t.merged; });
+  // 1) everything slides to its new square (merging tiles slide on top of their partner)
+  moves.forEach(m => { m.tile.r = m.r; m.tile.c = m.c; });
   draw();
+  // 2) after the slide: partners disappear, the other doubles, a new tile appears
+  setTimeout(() => {
+    for (const m of moves.filter(m => m.into)) {
+      m.into.v *= 2; m.into.merged = true;
+      G.points += m.into.v;
+      G.tiles = G.tiles.filter(t => t !== m.tile);
+    }
+    G.moves++;
+    addTile(G);
+    if (!G.won && G.tiles.some(t => t.v === 2048)) { G.won = true; $("msg").textContent = "Je hebt 2048! Je mag doorspelen."; }
+    if (!canMove()) gameOver();
+    saveLocal(SAVE_KEY, G);
+    draw();
+    busy = false;
+  }, SLIDE_MS);
 }
 // Still a move possible? An empty square, or two equal neighbours
 function canMove() {
-  if (G.cells.includes(0)) return true;
-  for (let i = 0; i < 16; i++) {
-    if (i % 4 < 3 && G.cells[i] === G.cells[i + 1]) return true;
-    if (i < 12 && G.cells[i] === G.cells[i + 4]) return true;
-  }
-  return false;
+  if (G.tiles.length < 16) return true;
+  return G.tiles.some(t => [[0, 1], [1, 0]].some(([dr, dc]) => at(G, t.r + dr, t.c + dc)?.v === t.v));
+}
+// Small shake of the board when an arrow does nothing, so it is clear the key was seen
+function nudge(dir) {
+  const [dr, dc] = VEC[dir];
+  $("board").animate([{ transform: "translate(0,0)" }, { transform: `translate(${dc * 6}px,${dr * 6}px)` }, { transform: "translate(0,0)" }], { duration: 150 });
 }
 
+// ---------- Drawing ----------
 function draw() {
-  $("board").innerHTML = G.cells.map((v, i) => {
-    const cls = v ? `v${v > 2048 ? "big" : v}${String(v).length === 3 ? " big3" : String(v).length > 3 ? " big4" : ""}` : "";
-    return `<div class="t ${cls}${fresh.has(i) ? " new" : ""}${merged.has(i) ? " merged" : ""}">${v || ""}</div>`;
-  }).join("");
+  const alive = new Set(G.tiles.map(t => t.id));
+  // remove tiles that merged away
+  for (const [id, el] of els) if (!alive.has(id)) { el.remove(); els.delete(id); }
+  for (const t of G.tiles) {
+    let el = els.get(t.id);
+    if (!el) { el = document.createElement("div"); el.innerHTML = "<span></span>"; $("layer").appendChild(el); els.set(t.id, el); }
+    const len = String(t.v).length;
+    el.className = `t v${t.v > 2048 ? "big" : t.v}${len === 3 ? " big3" : len > 3 ? " big4" : ""}${t.fresh ? " new" : ""}${t.merged ? " merged" : ""}`;
+    el.style.setProperty("--r", t.r);
+    el.style.setProperty("--c", t.c);
+    el.firstChild.textContent = t.v;
+  }
   $("score").textContent = `${G.points} punten`;
-  const top = Math.max(...G.cells);
-  $("records").textContent = `Hoogste tegel: ${top} · ${G.moves} zetten`;
+  $("records").textContent = `Hoogste tegel: ${Math.max(...G.tiles.map(t => t.v))} · ${G.moves} zetten`;
+  $("over").hidden = !G.over;
 }
 
+// ---------- Saving ----------
 // One finished game = one saved round. score/total stay 0: there are no right or wrong answers here.
 function save() {
-  const attempt = { test: "klassiek", score: 0, total: 0, points: G.points, max_tile: Math.max(...G.cells), moves: G.moves,
+  const attempt = { test: "klassiek", score: 0, total: 0, points: G.points, max_tile: Math.max(...G.tiles.map(t => t.v)), moves: G.moves,
                     time_s: Math.floor((Date.now() - (G.startedAt || Date.now())) / 1000), answers: [], finished_at: new Date().toISOString() };
   history.unshift({ ...attempt, module: MODULE });
   drawBest();
@@ -162,17 +243,22 @@ function gameOver() {
   G.over = true;
   const prev = best();
   save();
-  $("msg").textContent = prev === null || G.points > prev ? `Klaar! Nieuw record: ${G.points} punten.` : `Klaar! ${G.points} punten. Probeer het nog eens.`;
+  $("overText").textContent = prev === null || G.points > prev ? `Klaar! Nieuw record: ${G.points}` : `Klaar! ${G.points} punten`;
 }
-$("new").onclick = () => {
+function restart() {
   // A game that was going on (and not saved yet) counts too
   if (!G.over && G.moves > 0) save();
-  fresh = new Set(); G = newGame(); saveLocal("2048:game", G); $("msg").textContent = ""; draw();
-};
+  for (const el of els.values()) el.remove();
+  els.clear();
+  G = newGame(); saveLocal(SAVE_KEY, G); $("msg").textContent = ""; draw();
+}
+$("new").onclick = restart;
+$("again").onclick = restart;
 
+// ---------- Controls: arrow keys, WASD, the arrow buttons, or swipe ----------
 const KEYS = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right", w: "up", s: "down", a: "left", d: "right" };
 document.addEventListener("keydown", e => { if (KEYS[e.key]) { e.preventDefault(); move(KEYS[e.key]); } });
-// Swipe with mouse or finger
+document.querySelectorAll(".pad button").forEach(b => b.onclick = () => move(b.dataset.d));
 let start = null;
 $("board").addEventListener("pointerdown", e => start = [e.clientX, e.clientY]);
 addEventListener("pointerup", e => {
@@ -182,7 +268,10 @@ addEventListener("pointerup", e => {
   move(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "right" : "left") : (dy > 0 ? "down" : "up"));
 });
 
-if (G.over) $("msg").textContent = "Klaar! Klik op Nieuw spel.";
+// Local tests only (never on the real site): let the test read the board
+if (location.hostname === "localhost") window.__g2048 = () => ({ tiles: G.tiles.map(t => ({ v: t.v, r: t.r, c: t.c })), points: G.points, busy });
+
+if (G.over) $("overText").textContent = `Klaar! ${G.points} punten`;
 draw();
 </script>
 </body>

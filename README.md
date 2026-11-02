@@ -23,7 +23,7 @@ Learning games and puzzles for kids, in Dutch: practice, puzzles and games.
 | `kruiswoord/` (`engine.js`, `woorden.json`, `index.html`) | Daily crossword, same for everyone, 3 levels (5/7/9 words; children see the first two). On 'makkelijk' every word has an emoji clue. Word bank in `woorden.json` (`w`, `c` = Dutch clue, `e` = emoji; no IJ). The cursor jumps to the next word only after its last letter |
 | `memory/` | Memory: land–hoofdstad, dier–jong, Engels–Nederlands, tafels (made fresh, by groep). 6/8/10 pairs. Saved: score = pairs, total = turns |
 | `snake/` | Snake that eats the right answer (tafels by groep, or plus/min to 100). Wrong = one heart less (3), wall or own tail = game over. Saved answers per sum |
-| `2048/` | Classic 2048. The game in progress is kept in the browser. Saved: points, highest tile (score/total stay 0) |
+| `2048/` | Classic 2048 with sliding tiles, a short "how to play" (open on the first visit) and arrow buttons. The game in progress is kept in the browser per account. Saved: points, highest tile (score/total stay 0) |
 
 ## Adding a module
 
