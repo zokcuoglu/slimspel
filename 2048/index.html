@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>2048 · Slimspel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Andika:wght@400;700&family=Fredoka:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="../css/site.css">
+<style>
+/* Page-specific styles for 2048 */
+.bar{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:14px 0;flex-wrap:wrap}
+.board{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;width:min(100%,420px);aspect-ratio:1;margin:0 auto;background:var(--line);border-radius:14px;padding:10px;touch-action:none;user-select:none}
+.t{display:grid;place-items:center;border-radius:10px;background:color-mix(in srgb,var(--card) 70%,var(--line));font-family:var(--f-display);font-weight:700;font-size:clamp(22px,7vw,36px);font-variant-numeric:tabular-nums}
+.t.big3{font-size:clamp(18px,5.5vw,30px)}.t.big4{font-size:clamp(15px,4.5vw,24px)}
+/* Colours get warmer as the number grows */
+.t.v2{background:#eef3fb;color:#1d2a4d}.t.v4{background:#dce7f8;color:#1d2a4d}.t.v8{background:#ffe7a3;color:#1d2a4d}
+.t.v16{background:#ffd84d;color:#1d2a4d}.t.v32{background:#ffb24d;color:#1d2a4d}.t.v64{background:#ff8a4d;color:#fff}
+.t.v128{background:#7fd1a0;color:#123}.t.v256{background:#3fb57a;color:#fff}.t.v512{background:#2f8fd8;color:#fff}
+.t.v1024{background:#5b5bd6;color:#fff}.t.v2048{background:#c4372e;color:#fff}.t.vbig{background:#1d2a4d;color:#ffd84d}
+@keyframes appear{from{transform:scale(.4)}to{transform:scale(1)}}
+.t.new{animation:appear .15s ease-out}
+.t.merged{animation:pop .2s ease}
+@media (prefers-reduced-motion: reduce){.t.new,.t.merged{animation:none}}
+.records{margin-top:14px;color:var(--muted);font-size:15px;text-align:center}
+.msg{text-align:center;font-family:var(--f-display);font-weight:600;font-size:20px;min-height:1.6em;margin-top:12px}
+</style>
+</head>
+<body>
+<!-- Covers the page until js/core.js has checked the login (see index.html of the site) -->
+<div id="gate"><div class="gc"><p>Laden…</p></div></div>
+<script>
+setTimeout(() => {
+  if (window.__slimReady) return;
+  document.querySelector("#gate .gc").innerHTML =
+    "<h2>Laden lukt niet</h2><p>Ververs de pagina. Gaat het nog steeds mis? Vraag het aan Zana.</p>";
+}, 10000);
+</script>
+<main class="wrap">
+  <div class="top">
+    <a class="back" href="../">← Slimspel</a>
+    <span id="user"></span>
+  </div>
+  <h1><mark>2048</mark></h1>
+  <p class="sub">Schuif met de pijltjestoetsen (of veeg). Twee gelijke getallen worden samen één: 2 + 2 = 4, 4 + 4 = 8 … Kun je 2048 halen?</p>
+
+  <div class="bar">
+    <span class="chip" id="score">0 punten</span>
+    <span class="chip" id="best">record: -</span>
+    <button class="btn" id="new">Nieuw spel</button>
+  </div>
+  <div class="board" id="board"></div>
+  <p class="msg" id="msg"></p>
+  <p class="records" id="records"></p>
+</main>
+
+<script type="module">
+import { gate, userBox, saveAttempt, loadAttempts, loadLocal, saveLocal } from "../js/core.js";
+
+const MODULE = "slimspel-2048";
+const $ = id => document.getElementById(id);
+
+const { user, profile } = await gate({ seen: MODULE });
+$("user").innerHTML = userBox(user, profile);
+
+let history = [];
+loadAttempts(user.uid, MODULE).then(l => { history = l; drawBest(); }).catch(() => {});
+const best = () => history.length ? Math.max(...history.map(h => h.points || 0)) : null;
+function drawBest() { const b = best(); $("best").textContent = `record: ${b === null ? "-" : b}`; }
+
+// The board is 16 numbers (0 = empty), row by row. Kept in this browser, so a refresh does not lose the game.
+// fresh = tiles that just appeared, merged = tiles that just merged (for the small animations)
+let fresh = new Set(), merged = new Set();
+let G = loadLocal("2048:game", null);
+if (!G || !Array.isArray(G.cells) || G.cells.length !== 16) G = newGame();
+
+function newGame() {
+  const g = { cells: new Array(16).fill(0), points: 0, moves: 0, won: false, over: false, startedAt: Date.now() };
+  addTile(g); addTile(g);
+  return g;
+}
+// A new 2 (or sometimes a 4) on a random empty square
+function addTile(g) {
+  const empty = g.cells.map((v, i) => v ? -1 : i).filter(i => i >= 0);
+  if (!empty.length) return;
+  const i = empty[Math.floor(Math.random() * empty.length)];
+  g.cells[i] = Math.random() < 0.9 ? 2 : 4;
+  fresh.add(i);
+}
+
+// Slide one line of 4 towards its start; equal neighbours merge once. Returns new line, points and merged spots.
+function slide(line) {
+  const nums = line.filter(Boolean), out = [], mergedAt = [];
+  let pts = 0;
+  for (let i = 0; i < nums.length; i++) {
+    if (nums[i] === nums[i + 1]) { out.push(nums[i] * 2); pts += nums[i] * 2; mergedAt.push(out.length - 1); i++; }
+    else out.push(nums[i]);
+  }
+  while (out.length < 4) out.push(0);
+  return { out, pts, mergedAt };
+}
+
+// The 4 lines for a direction, each as cell numbers starting at the side we slide towards
+function lines(dir) {
+  const L = [];
+  for (let k = 0; k < 4; k++) {
+    if (dir === "left")  L.push([0, 1, 2, 3].map(j => k * 4 + j));
+    if (dir === "right") L.push([3, 2, 1, 0].map(j => k * 4 + j));
+    if (dir === "up")    L.push([0, 1, 2, 3].map(j => j * 4 + k));
+    if (dir === "down")  L.push([3, 2, 1, 0].map(j => j * 4 + k));
+  }
+  return L;
+}
+
+function move(dir) {
+  if (G.over) return;
+  fresh = new Set(); merged = new Set();
+  let changed = false;
+  for (const idx of lines(dir)) {
+    const { out, pts, mergedAt } = slide(idx.map(i => G.cells[i]));
+    idx.forEach((i, j) => { if (G.cells[i] !== out[j]) changed = true; G.cells[i] = out[j]; });
+    mergedAt.forEach(j => merged.add(idx[j]));
+    G.points += pts;
+  }
+  if (!changed) return; // nothing moved: no new tile
+  G.moves++;
+  addTile(G);
+  if (!G.won && G.cells.includes(2048)) { G.won = true; $("msg").textContent = "Je hebt 2048! Je mag doorspelen."; }
+  if (!canMove()) gameOver();
+  saveLocal("2048:game", G);
+  draw();
+}
+// Still a move possible? An empty square, or two equal neighbours
+function canMove() {
+  if (G.cells.includes(0)) return true;
+  for (let i = 0; i < 16; i++) {
+    if (i % 4 < 3 && G.cells[i] === G.cells[i + 1]) return true;
+    if (i < 12 && G.cells[i] === G.cells[i + 4]) return true;
+  }
+  return false;
+}
+
+function draw() {
+  $("board").innerHTML = G.cells.map((v, i) => {
+    const cls = v ? `v${v > 2048 ? "big" : v}${String(v).length === 3 ? " big3" : String(v).length > 3 ? " big4" : ""}` : "";
+    return `<div class="t ${cls}${fresh.has(i) ? " new" : ""}${merged.has(i) ? " merged" : ""}">${v || ""}</div>`;
+  }).join("");
+  $("score").textContent = `${G.points} punten`;
+  const top = Math.max(...G.cells);
+  $("records").textContent = `Hoogste tegel: ${top} · ${G.moves} zetten`;
+}
+
+// One finished game = one saved round. score/total stay 0: there are no right or wrong answers here.
+function save() {
+  const attempt = { test: "klassiek", score: 0, total: 0, points: G.points, max_tile: Math.max(...G.cells), moves: G.moves,
+                    time_s: Math.floor((Date.now() - (G.startedAt || Date.now())) / 1000), answers: [], finished_at: new Date().toISOString() };
+  history.unshift({ ...attempt, module: MODULE });
+  drawBest();
+  return saveAttempt(user.uid, MODULE, attempt).catch(e => $("msg").textContent = `Score niet opgeslagen (${e.code || "fout"}).`);
+}
+function gameOver() {
+  G.over = true;
+  const prev = best();
+  save();
+  $("msg").textContent = prev === null || G.points > prev ? `Klaar! Nieuw record: ${G.points} punten.` : `Klaar! ${G.points} punten. Probeer het nog eens.`;
+}
+$("new").onclick = () => {
+  // A game that was going on (and not saved yet) counts too
+  if (!G.over && G.moves > 0) save();
+  fresh = new Set(); G = newGame(); saveLocal("2048:game", G); $("msg").textContent = ""; draw();
+};
+
+const KEYS = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right", w: "up", s: "down", a: "left", d: "right" };
+document.addEventListener("keydown", e => { if (KEYS[e.key]) { e.preventDefault(); move(KEYS[e.key]); } });
+// Swipe with mouse or finger
+let start = null;
+$("board").addEventListener("pointerdown", e => start = [e.clientX, e.clientY]);
+addEventListener("pointerup", e => {
+  if (!start) return;
+  const dx = e.clientX - start[0], dy = e.clientY - start[1]; start = null;
+  if (Math.max(Math.abs(dx), Math.abs(dy)) < 25) return;
+  move(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "right" : "left") : (dy > 0 ? "down" : "up"));
+});
+
+if (G.over) $("msg").textContent = "Klaar! Klik op Nieuw spel.";
+draw();
+</script>
+</body>
+</html>

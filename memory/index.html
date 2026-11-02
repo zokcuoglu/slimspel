@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Memory · Slimspel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Andika:wght@400;700&family=Fredoka:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="../css/site.css">
+<style>
+/* Page-specific styles for memory */
+.label{font-family:var(--f-display);font-weight:600;margin-top:22px;margin-bottom:8px}
+.choice{display:flex;flex-wrap:wrap;gap:8px}
+.choice .chip{font-size:17px;padding:8px 16px}
+.records{margin-top:18px;color:var(--muted);font-size:15px}
+.bar{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+
+/* Cards: back side is the yellow pattern, front side shows the word */
+.cards-grid{--cols:4;display:grid;grid-template-columns:repeat(var(--cols),1fr);gap:10px;max-width:640px;margin:0 auto}
+.mc{aspect-ratio:4/3;border-radius:12px;border:2px solid var(--line);background:repeating-linear-gradient(45deg,var(--accent) 0 10px,color-mix(in srgb,var(--accent) 70%,var(--card)) 10px 20px);
+    display:grid;place-items:center;padding:6px;text-align:center;font-family:var(--f-display);font-weight:600;font-size:clamp(14px,2.6vw,20px);color:transparent;cursor:pointer;transition:transform .15s}
+.mc:hover:not(.open):not(.gone){transform:translateY(-2px)}
+.mc.open{background:var(--card);border-color:var(--ink);color:var(--ink);cursor:default}
+.mc.gone{background:var(--good-bg);border-color:var(--good);color:var(--good);cursor:default}
+.mc:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
+
+.big{font-family:var(--f-display);font-weight:700;font-size:clamp(40px,10vw,60px);line-height:1.1}
+.record{display:inline-block;background:var(--accent);color:var(--accent-ink);font-family:var(--f-display);font-weight:600;border-radius:99px;padding:3px 12px;margin-top:8px}
+.pairs{list-style:none;padding:0;margin:12px 0 0;display:flex;flex-wrap:wrap;gap:8px}
+.pairs li{background:var(--paper);border-radius:10px;padding:4px 10px}
+</style>
+</head>
+<body>
+<!-- Covers the page until js/core.js has checked the login (see index.html of the site) -->
+<div id="gate"><div class="gc"><p>Laden…</p></div></div>
+<script>
+setTimeout(() => {
+  if (window.__slimReady) return;
+  document.querySelector("#gate .gc").innerHTML =
+    "<h2>Laden lukt niet</h2><p>Ververs de pagina. Gaat het nog steeds mis? Vraag het aan Zana.</p>";
+}, 10000);
+</script>
+<main class="wrap">
+  <div class="top">
+    <a class="back" href="../">← Slimspel</a>
+    <span id="user"></span>
+  </div>
+
+  <!-- Screen 1: theme and size -->
+  <section id="setup">
+    <h1><mark>Memory</mark></h1>
+    <p class="sub">Draai steeds twee kaarten om en zoek de paren die bij elkaar horen.</p>
+    <div class="label">Onderwerp</div>
+    <div class="choice" id="themes"></div>
+    <div class="label">Niveau</div>
+    <div class="choice" id="levels"></div>
+    <div class="row" style="margin-top:22px"><button class="btn primary" id="go">Start</button></div>
+    <p class="records" id="records"></p>
+  </section>
+
+  <!-- Screen 2: the cards -->
+  <section id="play" hidden>
+    <div class="bar">
+      <span class="chip" id="what"></span>
+      <span class="chip" id="turns">0 beurten</span>
+      <span class="chip" id="clock">0:00</span>
+    </div>
+    <div class="cards-grid" id="grid"></div>
+    <div class="row" style="margin-top:16px"><button class="btn" id="stop">← Terug</button></div>
+  </section>
+
+  <!-- Screen 3: all pairs found -->
+  <section id="done" hidden>
+    <div class="panel">
+      <div class="big">Alle paren!</div>
+      <p class="sub" id="resultText"></p>
+      <span class="record" id="record" hidden></span>
+      <ul class="pairs" id="pairs"></ul>
+    </div>
+    <div class="row" style="margin-top:16px">
+      <button class="btn primary" id="again">Nog een keer</button>
+      <button class="btn" id="change">Ander onderwerp</button>
+    </div>
+  </section>
+</main>
+
+<script type="module">
+import { gate, userBox, saveAttempt, loadAttempts, shuffle, flash, loadLocal, saveLocal, tablesFor, esc } from "../js/core.js";
+
+const MODULE = "slimspel-memory";
+const $ = id => document.getElementById(id);
+
+const { user, profile } = await gate({ seen: MODULE });
+$("user").innerHTML = userBox(user, profile);
+
+// Pairs per theme: [card A, card B]. Only facts that do not change.
+const PAIRS = {
+  hoofdsteden: [["Spanje", "Madrid"], ["Frankrijk", "Parijs"], ["Duitsland", "Berlijn"], ["België", "Brussel"], ["Turkije", "Ankara"],
+    ["Italië", "Rome"], ["Japan", "Tokio"], ["Egypte", "Caïro"], ["Marokko", "Rabat"], ["Griekenland", "Athene"], ["Portugal", "Lissabon"],
+    ["Oostenrijk", "Wenen"], ["Polen", "Warschau"], ["Noorwegen", "Oslo"], ["Zweden", "Stockholm"], ["Denemarken", "Kopenhagen"],
+    ["Ierland", "Dublin"], ["Nederland", "Amsterdam"], ["Rusland", "Moskou"], ["China", "Peking"], ["Canada", "Ottawa"], ["Hongarije", "Boedapest"]],
+  dieren: [["koe", "kalf"], ["paard", "veulen"], ["schaap", "lam"], ["varken", "big"], ["hond", "pup"], ["kip", "kuiken"],
+    ["leeuw", "welp"], ["kikker", "kikkervisje"], ["eend", "eendje"], ["kat", "kitten"]],
+  engels: [["dog", "hond"], ["cat", "kat"], ["house", "huis"], ["tree", "boom"], ["apple", "appel"], ["book", "boek"], ["red", "rood"],
+    ["sun", "zon"], ["moon", "maan"], ["chair", "stoel"], ["bird", "vogel"], ["fish", "vis"], ["milk", "melk"], ["bread", "brood"],
+    ["ball", "bal"], ["horse", "paard"], ["friend", "vriend"], ["green", "groen"]]
+};
+const THEMES = { hoofdsteden: "Land en hoofdstad", dieren: "Dieren en hun jongen", engels: "Engels en Nederlands", tafels: "Tafels" };
+const LEVELS = { makkelijk: ["Makkelijk", 6, 4], normaal: ["Normaal", 8, 4], moeilijk: ["Moeilijk", 10, 5] }; // name, pairs, columns
+// Children see two levels, adults all three (same rule as the other games)
+const levels = profile.type === "child" ? ["makkelijk", "normaal"] : Object.keys(LEVELS);
+
+let history = [];
+loadAttempts(user.uid, MODULE).then(l => { history = l; drawRecords(); }).catch(() => {});
+
+let theme = loadLocal("memory:theme", "hoofdsteden");
+let level = loadLocal("memory:level", "makkelijk");
+if (!THEMES[theme]) theme = "hoofdsteden";
+if (!levels.includes(level)) level = "makkelijk";
+let S = null;
+const fmt = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+
+// Tafels pairs are made fresh: "6 × 7" with "42". Every answer must be different, otherwise two cards would match.
+function tafelPairs(n) {
+  const T = tablesFor(profile), out = [], answers = new Set();
+  for (let guard = 0; out.length < n && guard < 500; guard++) {
+    const a = 2 + Math.floor(Math.random() * 9), t = T[Math.floor(Math.random() * T.length)];
+    if (answers.has(a * t)) continue;
+    answers.add(a * t);
+    out.push([`${a} × ${t}`, String(a * t)]);
+  }
+  return out;
+}
+
+// ---------- Screen 1 ----------
+function chips(el, items, current, onPick) {
+  el.innerHTML = items.map(([v, t]) => `<button class="chip${v === current ? " on" : ""}" data-v="${v}">${t}</button>`).join("");
+  el.querySelectorAll("button").forEach(b => b.onclick = () => onPick(b.dataset.v));
+}
+function drawSetup() {
+  chips($("themes"), Object.entries(THEMES), theme, v => { theme = v; saveLocal("memory:theme", v); drawSetup(); });
+  chips($("levels"), levels.map(l => [l, `${LEVELS[l][0]} · ${LEVELS[l][1]} paren`]), level, v => { level = v; saveLocal("memory:level", v); drawSetup(); });
+  drawRecords();
+}
+// Record = fewest turns for this theme and level
+function best(test) {
+  const t = history.filter(h => h.test === test).map(h => h.total);
+  return t.length ? Math.min(...t) : null;
+}
+function drawRecords() {
+  const b = best(`${theme}-${level}`);
+  $("records").textContent = b === null ? "Nog geen record." : `Jouw record: ${b} beurten`;
+}
+$("go").onclick = () => start();
+
+// ---------- Screen 2 ----------
+function show(s) { ["setup", "play", "done"].forEach(x => $(x).hidden = x !== s); }
+
+function start() {
+  const [name, n, cols] = LEVELS[level];
+  const pairs = theme === "tafels" ? tafelPairs(n) : shuffle(PAIRS[theme]).slice(0, n);
+  // Two cards per pair; `p` says which pair a card belongs to
+  const cards = shuffle(pairs.flatMap((pair, p) => [{ p, text: pair[0] }, { p, text: pair[1] }]));
+  clearInterval(S?.timer);
+  S = { theme, level, pairs, cards, open: [], found: new Set(), turns: 0, startedAt: Date.now(), busy: false };
+  S.timer = setInterval(() => $("clock").textContent = fmt(Math.floor((Date.now() - S.startedAt) / 1000)), 500);
+  $("clock").textContent = "0:00";
+  $("what").textContent = `${THEMES[theme]} · ${name}`;
+  $("grid").style.setProperty("--cols", cols);
+  $("grid").innerHTML = cards.map((c, i) => `<button class="mc" data-i="${i}" aria-label="kaart ${i + 1}">${esc(c.text)}</button>`).join("");
+  $("grid").querySelectorAll(".mc").forEach(b => b.onclick = () => flip(Number(b.dataset.i)));
+  drawTurns();
+  show("play");
+}
+function drawTurns() { $("turns").textContent = `${S.turns} beurt${S.turns === 1 ? "" : "en"} · ${S.found.size}/${S.pairs.length}`; }
+
+function flip(i) {
+  const el = $("grid").children[i];
+  if (S.busy || S.found.has(S.cards[i].p) || S.open.includes(i)) return;
+  el.classList.add("open");
+  S.open.push(i);
+  if (S.open.length < 2) return;
+
+  // Two cards open: one turn
+  S.turns++;
+  const [a, b] = S.open;
+  if (S.cards[a].p === S.cards[b].p) {
+    // A pair: both stay open, in green
+    S.found.add(S.cards[a].p);
+    [a, b].forEach(k => { const c = $("grid").children[k]; c.classList.remove("open"); c.classList.add("gone"); flash(c, "pop"); });
+    S.open = [];
+    drawTurns();
+    if (S.found.size === S.pairs.length) finish();
+  } else {
+    // No pair: show them a moment, then turn them back
+    S.busy = true;
+    drawTurns();
+    setTimeout(() => {
+      [a, b].forEach(k => $("grid").children[k].classList.remove("open"));
+      S.open = []; S.busy = false;
+    }, 1000);
+  }
+}
+$("stop").onclick = () => { clearInterval(S.timer); show("setup"); drawSetup(); };
+
+// ---------- Screen 3 ----------
+function finish() {
+  clearInterval(S.timer);
+  const time_s = Math.floor((Date.now() - S.startedAt) / 1000);
+  const test = `${S.theme}-${S.level}`;
+  const prev = best(test);
+  // score = pairs, total = turns: "%" in the weekly mail = how many turns found a pair
+  const attempt = { test, theme: S.theme, level: S.level, score: S.pairs.length, total: S.turns, time_s,
+                    answers: [], finished_at: new Date().toISOString() };
+  history.unshift({ ...attempt, module: MODULE });
+  document.querySelector("#done .saveerr")?.remove();
+  saveAttempt(user.uid, MODULE, attempt).catch(e =>
+    $("resultText").insertAdjacentHTML("afterend", `<p class="saveerr">Score niet opgeslagen (${e.code || "fout"}).</p>`));
+
+  setTimeout(() => {
+    show("done");
+    $("resultText").textContent = `${THEMES[S.theme]} · ${LEVELS[S.level][0]} · ${S.turns} beurten · tijd ${fmt(time_s)}`;
+    $("record").hidden = prev !== null && S.turns >= prev;
+    $("record").textContent = prev === null ? "Eerste record!" : `Nieuw record! (was ${prev} beurten)`;
+    // All pairs once more to read: this is the learning part
+    $("pairs").innerHTML = S.pairs.map(([x, y]) => `<li>${esc(x)} – <b>${esc(y)}</b></li>`).join("");
+  }, 700);
+}
+$("again").onclick = () => start();
+$("change").onclick = () => { show("setup"); drawSetup(); };
+
+drawSetup();
+</script>
+</body>
+</html>

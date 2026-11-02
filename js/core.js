@@ -209,6 +209,13 @@ function showWaiting(user, profile) {
 // The child's groep as a number (1-8), or null if unknown. Moves up every August (nl-oefenbank mailer).
 export const groepNr = profile => /^groep([1-8])$/.test(profile?.groep || "") ? Number(profile.groep.slice(5)) : null;
 
+// Multiplication tables a player gets in the games: from groep 5 on, children skip 1, 2 and 10 (too easy).
+// Groep 1-4, unknown groep and adults: 1-10. Same rule as the tafels page.
+export const tablesFor = profile => {
+  const g = groepNr(profile);
+  return profile?.type === "child" && g !== null && g >= 5 ? [3, 4, 5, 6, 7, 8, 9] : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+};
+
 // Asked once if a child has no groep yet. Same field as the nl-oefenbank profile page.
 function askGroep(user, profile) {
   return new Promise(resolve => {

@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kruiswoord · Slimspel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Andika:wght@400;700&family=Fredoka:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="../css/site.css">
+<style>
+/* Page-specific styles for the crossword */
+.label{font-family:var(--f-display);font-weight:600;margin-top:22px;margin-bottom:8px}
+.choice{display:flex;flex-wrap:wrap;gap:8px}
+.choice .chip{font-size:17px;padding:8px 16px}
+.records{margin-top:18px;color:var(--muted);font-size:15px}
+.today{margin-top:14px;font-family:var(--f-display);font-weight:600}
+.bar{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.game{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;align-items:start}
+@media (max-width:700px){.game{grid-template-columns:1fr}}
+
+/* The grid: only cells with a letter are drawn, the rest stays open paper */
+.cw{--w:7;--h:7;display:grid;grid-template-columns:repeat(var(--w),1fr);gap:3px;width:min(100%,calc(var(--w) * 52px));margin:0 auto}
+.sq{position:relative;aspect-ratio:1;border-radius:6px}
+.sq.on{background:var(--card);border:2px solid var(--ink);cursor:pointer;display:grid;place-items:center;font-family:var(--f-display);font-weight:700;font-size:clamp(16px,4vw,26px);color:#2f5bd3}
+.sq .n{position:absolute;top:1px;left:4px;font-size:11px;font-weight:600;color:var(--muted);font-family:var(--f-body)}
+.sq.word{background:color-mix(in srgb,var(--accent) 30%,var(--card))}   /* active word */
+.sq.sel{background:var(--accent);color:var(--accent-ink)}              /* cursor */
+.sq.ok{background:var(--good-bg);color:var(--good);border-color:var(--good)}  /* part of a finished right word */
+.sq.hint{color:var(--muted);font-style:italic}
+@keyframes good{0%,60%{background:var(--good);color:#fff}100%{}}
+.sq.flashgood{animation:good 1s ease-out}
+@media (prefers-reduced-motion: reduce){.sq.flashgood{animation:none}}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .sq.on{color:#8fb0ff}}
+
+/* Clue lists */
+.clues h3{font-size:17px;margin:4px 0 6px}
+.clues ol{list-style:none;margin:0 0 14px;padding:0;display:grid;gap:6px}
+.clues li{display:flex;gap:10px;align-items:center;background:var(--card);border:2px solid var(--line);border-radius:10px;padding:6px 10px;cursor:pointer}
+.clues li.act{border-color:var(--ink);background:color-mix(in srgb,var(--accent) 25%,var(--card))}
+.clues li.done{color:var(--muted);text-decoration:line-through;background:var(--good-bg);border-color:var(--good-bg)}
+.clues .num{font-family:var(--f-display);font-weight:700;min-width:22px}
+.clues .emo{font-size:30px;line-height:1}
+.clues .len{color:var(--muted);font-size:13px;white-space:nowrap}
+.clues .txt{flex:1}
+.tools{display:flex;gap:10px;margin-top:4px;flex-wrap:wrap}
+/* Hidden input: on tablets it brings up the keyboard; on a computer it catches the typing */
+#kbd{position:fixed;left:-200px;top:0;width:40px;height:20px;opacity:0}
+
+.big{font-family:var(--f-display);font-weight:700;font-size:clamp(40px,10vw,60px);line-height:1.1}
+.record{display:inline-block;background:var(--accent);color:var(--accent-ink);font-family:var(--f-display);font-weight:600;border-radius:99px;padding:3px 12px;margin-top:8px}
+</style>
+</head>
+<body>
+<!-- Covers the page until js/core.js has checked the login (see index.html of the site) -->
+<div id="gate"><div class="gc"><p>Laden…</p></div></div>
+<script>
+setTimeout(() => {
+  if (window.__slimReady) return;
+  document.querySelector("#gate .gc").innerHTML =
+    "<h2>Laden lukt niet</h2><p>Ververs de pagina. Gaat het nog steeds mis? Vraag het aan Zana.</p>";
+}, 10000);
+</script>
+<main class="wrap">
+  <div class="top">
+    <a class="back" href="../">← Slimspel</a>
+    <span id="user"></span>
+  </div>
+
+  <!-- Screen 1: level -->
+  <section id="setup">
+    <h1><mark>Kruis</mark>woord</h1>
+    <p class="sub">Vul de woorden in met de hints. Klik op een vakje en typ.<br>Elke dag is er per niveau één nieuwe puzzel, voor iedereen dezelfde.</p>
+    <div class="label">Niveau</div>
+    <div class="choice" id="levels"></div>
+    <p class="sub" id="levelInfo"></p>
+    <p class="today" id="today" hidden></p>
+    <div class="row" style="margin-top:18px"><button class="btn primary" id="go">Start</button></div>
+    <p class="records" id="records"></p>
+    <div class="board-box"><h3>Vandaag</h3><div id="board1"></div></div>
+  </section>
+
+  <!-- Screen 2: the puzzle -->
+  <section id="play" hidden>
+    <div class="bar">
+      <span class="chip" id="what"></span>
+      <span class="chip" id="count"></span>
+      <span class="chip" id="clock">0:00</span>
+    </div>
+    <div class="game">
+      <div><div class="cw" id="cw"></div></div>
+      <div class="clues">
+        <h3>Horizontaal →</h3><ol id="cluesH"></ol>
+        <h3>Verticaal ↓</h3><ol id="cluesV"></ol>
+        <div class="tools">
+          <button class="btn" id="hint">Hint</button>
+          <button class="btn" id="stop">← Terug</button>
+        </div>
+      </div>
+    </div>
+    <input id="kbd" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="letter typen">
+  </section>
+
+  <!-- Screen 3: solved -->
+  <section id="done" hidden>
+    <div class="panel">
+      <div class="big">Opgelost!</div>
+      <p class="sub" id="resultText"></p>
+      <span class="record" id="record" hidden></span>
+      <div class="board-box"><h3>Vandaag</h3><div id="board2"></div></div>
+    </div>
+    <div class="row" style="margin-top:16px">
+      <button class="btn primary" id="change">Ander niveau van vandaag</button>
+    </div>
+  </section>
+</main>
+
+<script type="module">
+import { gate, userBox, saveAttempt, loadAttempts, flash, loadLocal, saveLocal, postScore, loadBoard, boardHtml, today, esc } from "../js/core.js";
+import { makePuzzle, seededRandom } from "./engine.js";
+
+const MODULE = "slimspel-kruiswoord";
+const LEVELS = { makkelijk: "Makkelijk", normaal: "Normaal", moeilijk: "Moeilijk" };
+const LEVEL_INFO = {
+  makkelijk: "5 korte woorden, met een plaatje als hint.",
+  normaal: "7 woorden, alleen met een zin als hint.",
+  moeilijk: "9 woorden, ook langere."
+};
+const $ = id => document.getElementById(id);
+
+const { user, profile } = await gate({ seen: MODULE });
+$("user").innerHTML = userBox(user, profile);
+
+// Children see two levels, adults all three (same rule as sudoku and woordzoeker)
+const levels = profile.type === "child" ? ["makkelijk", "normaal"] : Object.keys(LEVELS);
+const bank = await fetch("woorden.json", { cache: "no-cache" }).then(r => r.json());
+
+let history = [];
+try { history = await loadAttempts(user.uid, MODULE); } catch {}
+
+let level = loadLocal("kruiswoord:level", "makkelijk");
+if (!levels.includes(level)) level = "makkelijk";
+let S = null;
+
+const fmt = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+const solvedToday = lv => history.find(h => h.test === lv && h.day === today());
+const progressKey = (day, lv) => `kruiswoord:progress:${day}:${lv}`;
+try { // forget unfinished puzzles of earlier days
+  Object.keys(localStorage).filter(k => k.startsWith("slimspel:kruiswoord:progress:") && !k.includes(today()))
+    .forEach(k => localStorage.removeItem(k));
+} catch {}
+
+// ---------- Screen 1 ----------
+function drawSetup() {
+  $("levels").innerHTML = levels.map(l =>
+    `<button class="chip${l === level ? " on" : ""}" data-v="${l}">${LEVELS[l]}${solvedToday(l) ? " ✓" : ""}</button>`).join("");
+  $("levels").querySelectorAll("button").forEach(b => b.onclick = () => { level = b.dataset.v; saveLocal("kruiswoord:level", level); drawSetup(); });
+  $("levelInfo").textContent = LEVEL_INFO[level];
+  const done = solvedToday(level);
+  $("today").hidden = !done;
+  if (done) $("today").textContent = `Vandaag opgelost in ${fmt(done.time_s)}${done.hints ? ` met ${done.hints} hint${done.hints > 1 ? "s" : ""}` : ""}. Morgen is er een nieuwe puzzel!`;
+  $("go").disabled = !!done;
+  $("go").textContent = loadLocal(progressKey(today(), level), null) ? "Verder spelen" : "Start";
+  const t = history.filter(h => h.test === level && !h.hints).map(h => h.time_s);
+  $("records").textContent = t.length ? `Jouw record (zonder hints): ${fmt(Math.min(...t))}` : "Nog geen record voor dit niveau.";
+  drawBoard("board1", level);
+}
+async function drawBoard(elId, lv) {
+  const el = $(elId);
+  el.innerHTML = `<p class="board-empty">Laden…</p>`;
+  try { el.innerHTML = boardHtml(await loadBoard(today(), "kruiswoord-" + lv), user.uid); }
+  catch { el.innerHTML = `<p class="board-empty">De ranglijst is nu niet beschikbaar.</p>`; }
+}
+$("go").onclick = () => start();
+
+// ---------- Screen 2 ----------
+function show(s) { ["setup", "play", "done"].forEach(x => $(x).hidden = x !== s); }
+
+function start() {
+  const day = today();
+  if (solvedToday(level)) return drawSetup();
+  // Same seed for everybody on the same day -> the same puzzle for everybody
+  const P = makePuzzle(level, bank, seededRandom(`${day}|kruiswoord|${level}`));
+  const saved = loadLocal(progressKey(day, level), null);
+  S = { day, level, P, done: false,
+        grid: saved?.grid?.length === P.solution.length ? saved.grid : P.solution.map(() => ""),
+        hinted: new Set(saved?.hinted || []), hintsUsed: saved?.hintsUsed || 0,
+        elapsed: saved?.elapsed || 0, resumedAt: Date.now(),
+        word: 0, cell: P.words[0].cells[0] };
+  S.okWords = new Set(P.words.map((w, k) => k).filter(k => isRight(k)));
+  S.timer = setInterval(tick, 500); tick();
+  $("what").textContent = LEVELS[level];
+  $("cw").style.setProperty("--w", P.w);
+  $("cw").style.setProperty("--h", P.h);
+  // Number shown in the first cell of each word
+  const numAt = {};
+  P.words.forEach(x => numAt[x.cells[0]] = x.num);
+  $("cw").innerHTML = P.solution.map((ch, i) => ch
+    ? `<div class="sq on" data-i="${i}">${numAt[i] ? `<span class="n">${numAt[i]}</span>` : ""}<span class="l"></span></div>`
+    : `<div class="sq"></div>`).join("");
+  $("cw").querySelectorAll(".sq.on").forEach(el => el.onclick = () => pickCell(Number(el.dataset.i)));
+  // Clue lists; on 'makkelijk' the emoji is the main hint
+  const li = (x, k) => `<li data-k="${k}"><span class="num">${x.num}</span>${S.level === "makkelijk" && x.e ? `<span class="emo">${x.e}</span>` : ""}
+    <span class="txt">${esc(x.c)}</span><span class="len">(${x.w.length})</span></li>`;
+  $("cluesH").innerHTML = P.words.map((x, k) => x.dir === "H" ? li(x, k) : "").join("");
+  $("cluesV").innerHTML = P.words.map((x, k) => x.dir === "V" ? li(x, k) : "").join("");
+  document.querySelectorAll(".clues li").forEach(el => el.onclick = () => { S.word = Number(el.dataset.k); S.cell = firstOpen(S.word); draw(); focusKbd(); });
+  show("play");
+  draw();
+  focusKbd();
+}
+
+const played = () => S.elapsed + Math.floor((Date.now() - S.resumedAt) / 1000);
+function tick() { $("clock").textContent = fmt(played()); }
+function saveProgress() {
+  if (!S || S.done) return;
+  saveLocal(progressKey(S.day, S.level), { grid: S.grid, hinted: [...S.hinted], hintsUsed: S.hintsUsed, elapsed: played() });
+}
+addEventListener("pagehide", saveProgress);
+document.addEventListener("visibilitychange", () => { if (document.hidden) saveProgress(); });
+
+const isRight = k => S.P.words[k].cells.every(i => S.grid[i] === S.P.solution[i]);
+const wordsAt = i => S.P.words.map((w, k) => k).filter(k => S.P.words[k].cells.includes(i));
+// First empty or wrong cell of a word (or its first cell)
+function firstOpen(k) {
+  const cells = S.P.words[k].cells;
+  return cells.find(i => S.grid[i] !== S.P.solution[i] && !S.grid[i]) ?? cells[0];
+}
+
+// Clicking a cell: select it. Clicking the selected cell again switches across <-> down where two words cross.
+function pickCell(i) {
+  const ws = wordsAt(i);
+  if (i === S.cell && ws.length > 1) S.word = ws.find(k => k !== S.word) ?? ws[0];
+  else if (!ws.includes(S.word)) S.word = ws[0];
+  S.cell = i;
+  draw();
+  focusKbd();
+}
+function focusKbd() { $("kbd").focus({ preventScroll: true }); }
+
+function draw() {
+  const active = new Set(S.P.words[S.word].cells);
+  const okCells = new Set([...S.okWords].flatMap(k => S.P.words[k].cells));
+  $("cw").querySelectorAll(".sq.on").forEach(el => {
+    const i = Number(el.dataset.i);
+    el.querySelector(".l").textContent = S.grid[i];
+    el.classList.toggle("ok", okCells.has(i));
+    el.classList.toggle("word", active.has(i) && !okCells.has(i));
+    el.classList.toggle("sel", i === S.cell);
+    el.classList.toggle("hint", S.hinted.has(i));
+  });
+  document.querySelectorAll(".clues li").forEach(el => {
+    const k = Number(el.dataset.k);
+    el.classList.toggle("act", k === S.word);
+    el.classList.toggle("done", S.okWords.has(k));
+  });
+  $("count").textContent = `${S.okWords.size} / ${S.P.words.length} woorden`;
+}
+
+// Type one letter in the selected cell, then move on inside the word
+function type(ch) {
+  if (!S || S.done) return;
+  if (!S.hinted.has(S.cell)) S.grid[S.cell] = ch;
+  const cells = S.P.words[S.word].cells, pos = cells.indexOf(S.cell);
+  if (pos < cells.length - 1) S.cell = cells[pos + 1];
+  // Jump to the next word only when he typed the LAST letter. Otherwise a word whose last letters
+  // were already there (from crossing words) would jump away while he is still typing it.
+  afterChange(pos === cells.length - 1);
+}
+function backspace() {
+  if (!S || S.done) return;
+  const cells = S.P.words[S.word].cells, pos = cells.indexOf(S.cell);
+  // Empty cell: go one back first, like in a normal text box
+  if ((!S.grid[S.cell] || S.hinted.has(S.cell)) && pos > 0) S.cell = cells[pos - 1];
+  if (!S.hinted.has(S.cell)) S.grid[S.cell] = "";
+  afterChange();
+}
+
+// After every change: which words are now right? Light up the new ones. Finished?
+function afterChange(mayJump = false) {
+  const before = S.okWords;
+  S.okWords = new Set(S.P.words.map((w, k) => k).filter(isRight));
+  draw();
+  for (const k of S.okWords) if (!before.has(k)) {
+    S.P.words[k].cells.forEach(i => flash($("cw").querySelector(`[data-i="${i}"]`), "flashgood"));
+    // Word done: jump to the next unfinished word
+    const next = S.P.words.findIndex((w, j) => !S.okWords.has(j));
+    if (mayJump && k === S.word && next >= 0) { S.word = next; S.cell = firstOpen(next); draw(); }
+  }
+  saveProgress();
+  if (S.okWords.size === S.P.words.length) finish();
+}
+
+// Moving with the arrow keys: to the next letter cell in that direction
+function move(dr, dc) {
+  const { w, h, solution } = S.P;
+  let r = Math.floor(S.cell / w) + dr, c = S.cell % w + dc;
+  while (r >= 0 && c >= 0 && r < h && c < w) {
+    const i = r * w + c;
+    if (solution[i]) {
+      const ws = wordsAt(i), want = dr ? "V" : "H";
+      S.word = ws.find(k => S.P.words[k].dir === want) ?? ws[0];
+      S.cell = i; draw(); return;
+    }
+    r += dr; c += dc;
+  }
+}
+
+// Letters come in through the hidden input (works with tablet keyboards too)
+$("kbd").addEventListener("input", e => {
+  const ch = e.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(-1);
+  e.target.value = "";
+  if (ch) type(ch);
+});
+document.addEventListener("keydown", e => {
+  if (!S || $("play").hidden || S.done) return;
+  if (e.key === "Backspace") { e.preventDefault(); backspace(); }
+  else if (e.key === "ArrowRight") { e.preventDefault(); move(0, 1); }
+  else if (e.key === "ArrowLeft") { e.preventDefault(); move(0, -1); }
+  else if (e.key === "ArrowDown") { e.preventDefault(); move(1, 0); }
+  else if (e.key === "ArrowUp") { e.preventDefault(); move(-1, 0); }
+  else if (e.key === "Enter" || e.key === "Tab") {
+    e.preventDefault();
+    const n = S.P.words.length, next = [...Array(n).keys()].map(j => (S.word + 1 + j) % n).find(j => !S.okWords.has(j));
+    if (next !== undefined) { S.word = next; S.cell = firstOpen(next); draw(); }
+  }
+  // Typing while the hidden input lost focus (e.g. after clicking a button): still works
+  else if (document.activeElement !== $("kbd") && /^[a-zA-Z]$/.test(e.key)) { type(e.key.toUpperCase()); focusKbd(); }
+});
+
+// Hint: fill the selected cell if it is wrong or empty, else the first wrong cell of the active word, else anywhere
+$("hint").onclick = () => {
+  if (!S || S.done) return;
+  const wrong = i => S.grid[i] !== S.P.solution[i];
+  let i = wrong(S.cell) ? S.cell : S.P.words[S.word].cells.find(wrong);
+  if (i === undefined) i = S.P.solution.findIndex((ch, j) => ch && wrong(j));
+  if (i < 0) return;
+  S.grid[i] = S.P.solution[i];
+  S.hinted.add(i);
+  S.hintsUsed++;
+  S.cell = i;
+  afterChange();
+  focusKbd();
+};
+$("stop").onclick = () => { saveProgress(); clearInterval(S.timer); show("setup"); drawSetup(); };
+$("change").onclick = () => { show("setup"); drawSetup(); };
+
+// ---------- Screen 3 ----------
+function finish() {
+  S.done = true;
+  clearInterval(S.timer);
+  const time_s = played(), hints = S.hintsUsed;
+  const letters = S.P.solution.filter(Boolean).length;
+  const earlier = history.filter(h => h.test === S.level && !h.hints).map(h => h.time_s);
+  const prev = earlier.length ? Math.min(...earlier) : null;
+  saveLocal(progressKey(S.day, S.level), null);
+
+  // score = letters he typed himself, total = letters in the puzzle
+  const attempt = { test: S.level, day: S.day, score: Math.max(0, letters - hints), total: letters, hints, time_s,
+                    words: S.P.words.map(x => x.w), answers: [], finished_at: new Date().toISOString() };
+  history.unshift({ ...attempt, module: MODULE });
+  document.querySelector("#done .saveerr")?.remove();
+  saveAttempt(user.uid, MODULE, attempt).catch(e =>
+    $("resultText").insertAdjacentHTML("afterend", `<p class="saveerr">Score niet opgeslagen (${e.code || "fout"}).</p>`));
+  const posted = postScore(user, profile, S.day, "kruiswoord-" + S.level, time_s, hints).catch(() => {});
+
+  setTimeout(() => {
+    show("done");
+    $("resultText").textContent = `${LEVELS[S.level]} · ${S.P.words.length} woorden · tijd ${fmt(time_s)}` +
+      (hints ? ` · ${hints} hint${hints > 1 ? "s" : ""}` : " · zonder hints");
+    $("record").hidden = !!hints || (prev !== null && time_s >= prev);
+    $("record").textContent = prev === null ? "Eerste record!" : `Nieuw record! (was ${fmt(prev)})`;
+    posted.then(() => drawBoard("board2", S.level));
+  }, 1100);
+}
+
+drawSetup();
+</script>
+</body>
+</html>

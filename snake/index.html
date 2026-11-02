@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snake · Slimspel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Andika:wght@400;700&family=Fredoka:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="../css/site.css">
+<style>
+/* Page-specific styles for snake */
+.label{font-family:var(--f-display);font-weight:600;margin-top:22px;margin-bottom:8px}
+.choice{display:flex;flex-wrap:wrap;gap:8px}
+.choice .chip{font-size:17px;padding:8px 16px}
+.records{margin-top:18px;color:var(--muted);font-size:15px}
+.bar{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+.q{text-align:center;font-family:var(--f-display);font-weight:700;font-size:clamp(28px,7vw,40px);margin:4px 0 10px;font-variant-numeric:tabular-nums}
+.stage{position:relative;width:min(100%,460px);margin:0 auto}
+canvas{display:block;width:100%;aspect-ratio:1;border:3px solid var(--ink);border-radius:12px;background:var(--card);touch-action:none}
+.overlay{position:absolute;inset:0;display:grid;place-items:center;text-align:center;background:color-mix(in srgb,var(--card) 82%,transparent);border-radius:12px;font-family:var(--f-display);font-weight:600;font-size:20px;padding:20px}
+.pad{display:grid;grid-template-columns:repeat(3,64px);grid-template-rows:repeat(2,52px);gap:6px;justify-content:center;margin-top:12px}
+.pad button{background:var(--card);border:2px solid var(--line);border-radius:12px;font-size:22px}
+.pad button:hover{border-color:var(--ink)}
+.pad .up{grid-column:2}.pad .left{grid-column:1;grid-row:2}.pad .down{grid-column:2;grid-row:2}.pad .right{grid-column:3;grid-row:2}
+.lives{letter-spacing:2px}
+.big{font-family:var(--f-display);font-weight:700;font-size:clamp(40px,10vw,60px);line-height:1.1}
+.record{display:inline-block;background:var(--accent);color:var(--accent-ink);font-family:var(--f-display);font-weight:600;border-radius:99px;padding:3px 12px;margin-top:8px}
+.mistakes{list-style:none;padding:0;margin:10px 0 0;display:flex;flex-wrap:wrap;gap:8px}
+.mistakes li{background:var(--bad-bg);color:var(--bad);border-radius:10px;padding:4px 10px;font-weight:700}
+</style>
+</head>
+<body>
+<!-- Covers the page until js/core.js has checked the login (see index.html of the site) -->
+<div id="gate"><div class="gc"><p>Laden…</p></div></div>
+<script>
+setTimeout(() => {
+  if (window.__slimReady) return;
+  document.querySelector("#gate .gc").innerHTML =
+    "<h2>Laden lukt niet</h2><p>Ververs de pagina. Gaat het nog steeds mis? Vraag het aan Zana.</p>";
+}, 10000);
+</script>
+<main class="wrap">
+  <div class="top">
+    <a class="back" href="../">← Slimspel</a>
+    <span id="user"></span>
+  </div>
+
+  <!-- Screen 1: mode -->
+  <section id="setup">
+    <h1><mark>Snake</mark></h1>
+    <p class="sub">Stuur de slang met de pijltjestoetsen naar het goede antwoord. Goed = je groeit. Fout = je verliest een hartje. Pas op voor de muur en je eigen staart!</p>
+    <div class="label">Sommen</div>
+    <div class="choice" id="modes"></div>
+    <div class="row" style="margin-top:22px"><button class="btn primary" id="go">Start</button></div>
+    <p class="records" id="records"></p>
+  </section>
+
+  <!-- Screen 2: the game -->
+  <section id="play" hidden>
+    <div class="bar">
+      <span class="chip" id="score">0 goed</span>
+      <span class="chip lives" id="lives"></span>
+      <button class="btn" id="stop">← Terug</button>
+    </div>
+    <div class="q" id="q"></div>
+    <div class="stage">
+      <canvas id="cv" width="560" height="560"></canvas>
+      <div class="overlay" id="ov" hidden></div>
+    </div>
+    <div class="pad">
+      <button class="up" data-d="up" aria-label="omhoog">▲</button>
+      <button class="left" data-d="left" aria-label="links">◀</button>
+      <button class="down" data-d="down" aria-label="omlaag">▼</button>
+      <button class="right" data-d="right" aria-label="rechts">▶</button>
+    </div>
+  </section>
+
+  <!-- Screen 3: game over -->
+  <section id="done" hidden>
+    <div class="panel">
+      <div class="big" id="result"></div>
+      <p class="sub" id="resultText"></p>
+      <span class="record" id="record" hidden></span>
+      <div id="mistakeBox" hidden>
+        <div class="label">Deze waren nog lastig</div>
+        <ul class="mistakes" id="mistakes"></ul>
+      </div>
+    </div>
+    <div class="row" style="margin-top:16px">
+      <button class="btn primary" id="again">Nog een keer</button>
+      <button class="btn" id="change">Andere sommen</button>
+    </div>
+  </section>
+</main>
+
+<script type="module">
+import { gate, userBox, saveAttempt, loadAttempts, flash, loadLocal, saveLocal, tablesFor } from "../js/core.js";
+
+const MODULE = "slimspel-snake";
+const MODES = { tafels: "Tafels", plusmin: "Plus en min tot 100" };
+const N = 14;                 // board is N x N squares
+const LIVES = 3;
+const $ = id => document.getElementById(id);
+
+const { user, profile } = await gate({ seen: MODULE });
+$("user").innerHTML = userBox(user, profile);
+
+let history = [];
+loadAttempts(user.uid, MODULE).then(l => { history = l; drawRecords(); }).catch(() => {});
+let mode = loadLocal("snake:mode", "tafels");
+if (!MODES[mode]) mode = "tafels";
+let S = null;
+const rnd = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+
+// ---------- Questions ----------
+// Returns { text, answer, wrong: [two other numbers that look possible], qid }
+function makeQuestion() {
+  if (mode === "tafels") {
+    const T = tablesFor(profile), t = T[rnd(0, T.length - 1)], a = rnd(1, 10), ans = a * t;
+    // Wrong answers close to the right one: a neighbour in the same table, or a nearby product
+    const pool = [ans + t, ans - t, (a + 1) * (t + 1), (a - 1) * (t - 1), ans + 1, ans - 1, ans + 10, ans - 10]
+      .filter(x => x > 0 && x !== ans);
+    return { text: `${a} × ${t} = ?`, answer: ans, wrong: pickTwo(pool), qid: `${a}×${t}` };
+  }
+  // plus or minus, answers from 1 to 100
+  if (Math.random() < 0.5) {
+    const a = rnd(5, 80), b = rnd(3, 100 - a), ans = a + b;
+    return { text: `${a} + ${b} = ?`, answer: ans, wrong: pickTwo([ans + 10, ans - 10, ans + 1, ans - 1, ans + 2].filter(x => x > 0 && x <= 110)), qid: `${a}+${b}` };
+  }
+  const a = rnd(20, 100), b = rnd(3, a - 1), ans = a - b;
+  return { text: `${a} − ${b} = ?`, answer: ans, wrong: pickTwo([ans + 10, ans - 10, ans + 1, ans - 1, ans + 2].filter(x => x > 0)), qid: `${a}-${b}` };
+}
+function pickTwo(pool) {
+  const u = [...new Set(pool)];
+  const a = u.splice(rnd(0, u.length - 1), 1)[0], b = u.length ? u[rnd(0, u.length - 1)] : a + 3;
+  return [a, b];
+}
+
+// ---------- Screen 1 ----------
+function drawSetup() {
+  $("modes").innerHTML = Object.entries(MODES).map(([v, t]) => `<button class="chip${v === mode ? " on" : ""}" data-v="${v}">${t}</button>`).join("");
+  $("modes").querySelectorAll("button").forEach(b => b.onclick = () => { mode = b.dataset.v; saveLocal("snake:mode", mode); drawSetup(); });
+  drawRecords();
+}
+function best(m) {
+  const t = history.filter(h => h.test === m).map(h => h.score);
+  return t.length ? Math.max(...t) : null;
+}
+function drawRecords() {
+  const b = best(mode);
+  $("records").textContent = b === null ? "Nog geen record." : `Jouw record: ${b} goed`;
+}
+$("go").onclick = () => start();
+
+// ---------- Screen 2: the game ----------
+function show(s) { ["setup", "play", "done"].forEach(x => $(x).hidden = x !== s); }
+
+function start() {
+  const mid = Math.floor(N / 2);
+  S = { mode, snake: [[mid, 3], [mid, 2], [mid, 1]],  // [row, col], head first
+        dir: [0, 1], next: [0, 1], grow: 0, good: 0, lives: LIVES, log: [], wrongList: [],
+        speed: 230, over: false, paused: true, startedAt: Date.now() };
+  newQuestion();
+  show("play");
+  draw();
+  overlay("Druk op een pijltje om te beginnen");
+}
+
+// Put the right answer and two wrong ones on free squares, not too close to the head
+function newQuestion() {
+  S.q = makeQuestion();
+  $("q").textContent = S.q.text;
+  const taken = new Set(S.snake.map(([r, c]) => r * N + c));
+  const [hr, hc] = S.snake[0];
+  S.food = [];
+  for (const value of [S.q.answer, ...S.q.wrong]) {
+    let r, c;
+    do { r = rnd(0, N - 1); c = rnd(0, N - 1); }
+    while (taken.has(r * N + c) || Math.abs(r - hr) + Math.abs(c - hc) < 3);
+    taken.add(r * N + c);
+    S.food.push({ r, c, value });
+  }
+}
+
+function overlay(text) { $("ov").hidden = !text; $("ov").textContent = text || ""; }
+
+function step() {
+  if (S.over || S.paused) return;
+  S.dir = S.next;
+  const [hr, hc] = S.snake[0];
+  const head = [hr + S.dir[0], hc + S.dir[1]];
+  // Wall or own body: game over (the tail moves away this step, so it does not count)
+  const body = S.snake.slice(0, S.grow ? S.snake.length : -1);
+  if (head[0] < 0 || head[1] < 0 || head[0] >= N || head[1] >= N || body.some(([r, c]) => r === head[0] && c === head[1])) {
+    return gameOver(head[0] < 0 || head[1] < 0 || head[0] >= N || head[1] >= N ? "Tegen de muur!" : "In je eigen staart!");
+  }
+  S.snake.unshift(head);
+  if (S.grow) S.grow--; else S.snake.pop();
+
+  // Did the head land on a number?
+  const hit = S.food.find(f => f.r === head[0] && f.c === head[1]);
+  if (hit) {
+    const ok = hit.value === S.q.answer;
+    S.log.push({ qid: S.q.qid, chosen: String(hit.value), correct: ok });
+    if (ok) {
+      S.good++; S.grow += 2;
+      S.speed = Math.max(110, S.speed - 7); // a little faster after every right answer
+      flash($("q"), "pop");
+      newQuestion();
+    } else {
+      S.lives--;
+      S.wrongList.push(`${S.q.text.replace(" = ?", "")} = ${S.q.answer}`);
+      flash($("q"), "shake");
+      S.food = S.food.filter(f => f !== hit); // that wrong number is gone; the question stays
+      if (S.lives <= 0) { draw(); return gameOver("Geen hartjes meer!"); }
+    }
+  }
+  draw();
+  S.timer = setTimeout(step, S.speed);
+}
+
+function draw() {
+  const cv = $("cv"), ctx = cv.getContext("2d"), s = cv.width / N;
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  // light checker board so the squares are easy to see
+  ctx.fillStyle = css("--paper");
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) if ((r + c) % 2) ctx.fillRect(c * s, r * s, s, s);
+  // numbers to eat
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  for (const f of S.food) {
+    ctx.fillStyle = css("--accent");
+    ctx.beginPath(); ctx.arc(f.c * s + s / 2, f.r * s + s / 2, s * 0.48, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#1d2a4d";
+    ctx.font = `700 ${String(f.value).length > 2 ? s * 0.42 : s * 0.55}px Fredoka, sans-serif`;
+    ctx.fillText(f.value, f.c * s + s / 2, f.r * s + s / 2 + 1);
+  }
+  // the snake: head darker
+  S.snake.forEach(([r, c], i) => {
+    ctx.fillStyle = i === 0 ? "#1f6b3c" : "#2e9b57";
+    const p = s * 0.08;
+    ctx.beginPath(); ctx.roundRect(c * s + p, r * s + p, s - 2 * p, s - 2 * p, s * 0.25); ctx.fill();
+  });
+  // eyes, looking where it goes
+  const [hr, hc] = S.snake[0];
+  ctx.fillStyle = "#fff";
+  for (const side of [-1, 1]) {
+    const ex = hc * s + s / 2 + (S.dir[1] ? S.dir[1] * s * 0.15 : side * s * 0.18);
+    const ey = hr * s + s / 2 + (S.dir[0] ? S.dir[0] * s * 0.15 : side * s * 0.18);
+    ctx.beginPath(); ctx.arc(ex, ey, s * 0.1, 0, Math.PI * 2); ctx.fill();
+  }
+  $("score").textContent = `${S.good} goed`;
+  $("lives").textContent = "❤️".repeat(S.lives) + "🤍".repeat(LIVES - S.lives);
+}
+
+// Turning: never straight back into yourself
+const DIRS = { up: [-1, 0], down: [1, 0], left: [0, -1], right: [0, 1] };
+function turn(name) {
+  if (!S || S.over) return;
+  const d = DIRS[name];
+  if (d[0] === -S.dir[0] && d[1] === -S.dir[1]) return;
+  S.next = d;
+  if (S.paused) { S.paused = false; overlay(""); clearTimeout(S.timer); S.timer = setTimeout(step, S.speed); }
+}
+function pause() {
+  if (!S || S.over) return;
+  S.paused = !S.paused;
+  clearTimeout(S.timer);
+  if (S.paused) overlay("Pauze · druk op een pijltje of spatie");
+  else { overlay(""); S.timer = setTimeout(step, S.speed); }
+}
+const KEYS = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right", w: "up", s: "down", a: "left", d: "right" };
+document.addEventListener("keydown", e => {
+  if (!S || $("play").hidden) return;
+  if (KEYS[e.key]) { e.preventDefault(); turn(KEYS[e.key]); }
+  else if (e.key === " ") { e.preventDefault(); pause(); }
+});
+document.querySelectorAll(".pad button").forEach(b => b.onclick = () => turn(b.dataset.d));
+// Swipe on a tablet
+let touch = null;
+$("cv").addEventListener("pointerdown", e => touch = [e.clientX, e.clientY]);
+$("cv").addEventListener("pointerup", e => {
+  if (!touch) return;
+  const dx = e.clientX - touch[0], dy = e.clientY - touch[1]; touch = null;
+  if (Math.max(Math.abs(dx), Math.abs(dy)) < 20) return;
+  turn(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "right" : "left") : (dy > 0 ? "down" : "up"));
+});
+// Leaving the tab pauses the game
+document.addEventListener("visibilitychange", () => { if (document.hidden && S && !S.over && !S.paused) pause(); });
+$("stop").onclick = () => { if (S && !S.over) { clearTimeout(S.timer); S.over = true; if (S.log.length) save(); } show("setup"); drawSetup(); };
+
+// ---------- Screen 3 ----------
+function save() {
+  const attempt = { test: S.mode, score: S.good, total: S.log.length, answers: S.log.slice(0, 50),
+                    length: S.snake.length, time_s: Math.floor((Date.now() - S.startedAt) / 1000), finished_at: new Date().toISOString() };
+  history.unshift({ ...attempt, module: MODULE });
+  return saveAttempt(user.uid, MODULE, attempt);
+}
+function gameOver(why) {
+  S.over = true;
+  clearTimeout(S.timer);
+  const prev = best(S.mode);
+  overlay(why);
+  // Save only if he answered at least one question
+  const saving = S.log.length ? save() : Promise.resolve();
+  setTimeout(() => {
+    show("done");
+    $("result").textContent = `${S.good} goed`;
+    $("resultText").textContent = `${why} · ${MODES[S.mode]}`;
+    $("record").hidden = S.good === 0 || (prev !== null && S.good <= prev);
+    $("record").textContent = prev === null ? "Eerste record!" : `Nieuw record! (was ${prev})`;
+    const unique = [...new Set(S.wrongList)];
+    $("mistakeBox").hidden = !unique.length;
+    $("mistakes").innerHTML = unique.map(m => `<li>${m}</li>`).join("");
+    document.querySelector("#done .saveerr")?.remove();
+    saving.catch(e => $("resultText").insertAdjacentHTML("afterend", `<p class="saveerr">Score niet opgeslagen (${e.code || "fout"}).</p>`));
+  }, 1200);
+}
+$("again").onclick = () => start();
+$("change").onclick = () => { show("setup"); drawSetup(); };
+
+// Local tests only (never on the real site): let the test read where the numbers are
+if (location.hostname === "localhost") window.__snakeState = () => S && { snake: S.snake, food: S.food, answer: S.q.answer, dir: S.dir };
+
+drawSetup();
+</script>
+</body>
+</html>
