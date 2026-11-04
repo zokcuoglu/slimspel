@@ -31,7 +31,7 @@ setTimeout(() => {
 // This page only logs in and hands over Slimspel's own save/load functions.
 // ?taal=tr = the Turkish Woordle (old links from NL Oefenbank still work).
 import { gate, userBox, saveAttempt, loadAttempts, saveWoordlePlay, loadWoordlePlays } from "../js/core.js";
-import { mountWoordle } from "./game.js";
+import { mountWoordle } from "./game.js?v=2026-11-04b"; // raise ?v= after each change to game.js (browser cache)
 
 const lang = new URLSearchParams(location.search).get("taal") === "tr" ? "tr" : "nl";
 if (lang === "tr") {
