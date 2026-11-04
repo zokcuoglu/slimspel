@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Woordle · Slimspel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Andika:wght@400;700&family=Fredoka:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="../css/site.css">
+<style>
+/* Page-specific styles for woordle */
+.label{font-family:var(--f-display);font-weight:600;margin-top:22px;margin-bottom:8px}
+.choice{display:flex;flex-wrap:wrap;gap:8px}
+.choice .chip{font-size:17px;padding:8px 16px}
+.records{margin-top:18px;color:var(--muted);font-size:15px}
+.today{margin-top:14px;font-family:var(--f-display);font-weight:600}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:15px;color:var(--muted);margin-top:10px}
+.legend b{display:inline-block;width:18px;height:18px;border-radius:4px;vertical-align:-3px;margin-right:4px}
+.bar{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+
+/* The rows of guesses */
+.rows{display:grid;gap:6px;justify-content:center;margin:0 auto}
+.rw{display:grid;grid-template-columns:repeat(var(--n),min(15vw,58px));gap:6px}
+.lt{aspect-ratio:1;display:grid;place-items:center;border:2px solid var(--line);border-radius:8px;background:var(--card);
+    font-family:var(--f-display);font-weight:700;font-size:clamp(22px,7vw,32px);text-transform:uppercase}
+.lt.filled{border-color:var(--muted)}
+.g{--good-c:#3fa564;--near-c:#e0b030;--miss-c:#8a94a8}
+.lt.good,.key.good{background:var(--good-c);border-color:var(--good-c);color:#fff}
+.lt.near,.key.near{background:var(--near-c);border-color:var(--near-c);color:#fff}
+.lt.miss,.key.miss{background:var(--miss-c);border-color:var(--miss-c);color:#fff}
+@keyframes flip{0%{transform:rotateX(0)}50%{transform:rotateX(90deg)}100%{transform:rotateX(0)}}
+.lt.flip{animation:flip .35s ease}
+@media (prefers-reduced-motion: reduce){.lt.flip{animation:none}}
+.msg{text-align:center;min-height:1.6em;margin:10px 0;font-family:var(--f-display);font-weight:600;color:var(--bad)}
+
+/* On-screen keyboard (QWERTY, like most keyboards in the Netherlands) */
+.kb{display:grid;gap:6px;max-width:520px;margin:6px auto 0}
+.kb .r{display:flex;gap:5px;justify-content:center}
+.key{flex:1;max-width:44px;height:52px;border-radius:8px;border:2px solid var(--line);background:var(--card);font-family:var(--f-display);font-weight:600;font-size:18px;text-transform:uppercase}
+.key.wide{max-width:76px;font-size:14px}
+.key:hover{border-color:var(--ink)}
+
+.big{font-family:var(--f-display);font-weight:700;font-size:clamp(36px,9vw,54px);line-height:1.1}
+.record{display:inline-block;background:var(--accent);color:var(--accent-ink);font-family:var(--f-display);font-weight:600;border-radius:99px;padding:3px 12px;margin-top:8px}
+.word-info{margin-top:14px;background:var(--paper);border-radius:12px;padding:12px 14px}
+.word-info .w{font-family:var(--f-display);font-weight:700;font-size:26px;letter-spacing:.06em;text-transform:uppercase}
+.credit{color:var(--muted);font-size:12px;margin-top:28px}
+</style>
+</head>
+<body class="g">
+<!-- Covers the page until js/core.js has checked the login (see index.html of the site) -->
+<div id="gate"><div class="gc"><p>Laden…</p></div></div>
+<script>
+setTimeout(() => {
+  if (window.__slimReady) return;
+  document.querySelector("#gate .gc").innerHTML =
+    "<h2>Laden lukt niet</h2><p>Ververs de pagina. Gaat het nog steeds mis? Vraag het aan Zana.</p>";
+}, 10000);
+</script>
+<main class="wrap">
+  <div class="top">
+    <a class="back" href="../">← Slimspel</a>
+    <span id="user"></span>
+  </div>
+
+  <!-- Screen 1: level -->
+  <section id="setup">
+    <h1><mark>Woord</mark>le</h1>
+    <p class="sub">Raad het geheime woord in 6 beurten. Typ een echt woord en druk op Enter. De kleuren helpen je:</p>
+    <div class="legend">
+      <span><b style="background:#3fa564"></b>goede letter, goede plek</span>
+      <span><b style="background:#e0b030"></b>letter zit erin, andere plek</span>
+      <span><b style="background:#8a94a8"></b>letter zit er niet in</span>
+    </div>
+    <p class="sub" style="margin-top:8px">Elke dag is er per niveau één nieuw woord, voor iedereen hetzelfde.</p>
+    <div class="label">Niveau</div>
+    <div class="choice" id="levels"></div>
+    <p class="today" id="today" hidden></p>
+    <div class="row" style="margin-top:18px"><button class="btn primary" id="go">Start</button></div>
+    <p class="records" id="records"></p>
+    <div class="board-box"><h3>Vandaag</h3><div id="board1"></div></div>
+  </section>
+
+  <!-- Screen 2: the game -->
+  <section id="play" hidden>
+    <div class="bar">
+      <span class="chip" id="what"></span>
+      <span class="chip" id="clock">0:00</span>
+      <button class="btn" id="stop">← Terug</button>
+    </div>
+    <div class="rows" id="rows"></div>
+    <p class="msg" id="msg"></p>
+    <div class="kb" id="kb"></div>
+  </section>
+
+  <!-- Screen 3: finished (won or not) -->
+  <section id="done" hidden>
+    <div class="panel">
+      <div class="big" id="result"></div>
+      <p class="sub" id="resultText"></p>
+      <span class="record" id="record" hidden></span>
+      <div class="word-info" id="wordInfo"></div>
+      <div class="board-box"><h3>Vandaag</h3><div id="board2"></div></div>
+    </div>
+    <div class="row" style="margin-top:16px">
+      <button class="btn primary" id="change">Ander niveau van vandaag</button>
+    </div>
+  </section>
+
+  <p class="credit">Woordenlijst voor het controleren van woorden: OpenTaal (opentaal.org), CC BY 3.0.</p>
+</main>
+
+<script type="module">
+import { gate, userBox, saveAttempt, loadAttempts, flash, loadLocal, saveLocal, postScore, loadBoard, boardHtml, today, esc } from "../js/core.js";
+
+const MODULE = "slimspel-woordle";
+const TRIES = 6;
+const LEVELS = { makkelijk: ["Makkelijk · 4 letters", 4], normaal: ["Normaal · 5 letters", 5], moeilijk: ["Moeilijk · 6 letters", 6] };
+const $ = id => document.getElementById(id);
+
+const { user, profile } = await gate({ seen: MODULE });
+$("user").innerHTML = userBox(user, profile);
+const levels = profile.type === "child" ? ["makkelijk", "normaal"] : Object.keys(LEVELS);
+
+// ---------- Words ----------
+// Answers come only from our own lists: the nl-oefenbank word pool (groep 1-6) and the kruiswoord and
+// woordzoeker lists. The nl-oefenbank pool is read live, so new words there join the game by themselves.
+// Allowed guesses: the OpenTaal word list (geldig-N.txt), so random letters like "aaaaa" are refused.
+let info = {};       // answer word -> { tr, voorbeeld } (from the nl-oefenbank pool, to show after the game)
+let answers = {};    // length -> sorted list of answer words
+const valid = {};    // length -> Set of allowed guesses
+async function loadWords() {
+  const [pool, kw, wz] = await Promise.all([
+    fetch("../../nl-oefenbank/data/woorden.json", { cache: "no-cache" }).then(r => { if (!r.ok) throw new Error("pool"); return r.json(); }),
+    fetch("../kruiswoord/woorden.json").then(r => r.json()),
+    fetch("../woordzoeker/woorden.json").then(r => r.json())
+  ]);
+  const clean = t => t.trim().toLowerCase().replace(/^(de|het|een)\s+/, "");
+  const cand = new Set();
+  for (const w of pool.woorden) {
+    if (!["1-2", "3", "4", "5", "6"].includes(String(w.groep)) || (w.soort && w.soort !== "woord")) continue;
+    const t = clean(w.nl);
+    cand.add(t);
+    if (!info[t]) info[t] = { tr: w.tr || "", voorbeeld: w.voorbeeld || "" };
+  }
+  kw.words.forEach(x => cand.add(x.w.toLowerCase()));
+  wz.themes.forEach(th => th.words.forEach(x => cand.add(x.toLowerCase())));
+  for (const n of [4, 5, 6]) {
+    valid[n] = new Set((await fetch(`geldig-${n}.txt`).then(r => r.text())).split("\n").filter(Boolean));
+    // plain letters, no IJ (one letter or two? avoid the doubt), and a real word in OpenTaal (so no names like "japan")
+    answers[n] = [...cand].filter(t => t.length === n && /^[a-z]+$/.test(t) && !t.includes("ij") && valid[n].has(t)).sort();
+  }
+}
+try { await loadWords(); }
+catch { document.querySelector("main").innerHTML = `<div class="panel"><h2>Laden lukt niet</h2><p>De woorden konden niet worden geladen. Ververs de pagina.</p></div>`; throw new Error("words"); }
+
+// Today's word for a level: every candidate gets a number from (day, level, word); the smallest wins.
+// Everybody gets the same word, and a word added to the list later rarely changes today's word.
+function hash(text) { let h = 2166136261; for (const ch of text) { h ^= ch.codePointAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
+const wordOf = (day, lv) => answers[LEVELS[lv][1]].reduce((best, w) => hash(`${day}|woordle|${lv}|${w}`) < hash(`${day}|woordle|${lv}|${best}`) ? w : best);
+
+let history = [];
+try { history = await loadAttempts(user.uid, MODULE); } catch {}
+let level = loadLocal("woordle:level", "makkelijk");
+if (!levels.includes(level)) level = "makkelijk";
+let S = null;
+const fmt = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+const playedToday = lv => history.find(h => h.test === lv && h.day === today());
+const progressKey = (day, lv) => `woordle:progress:${day}:${lv}`;
+try {
+  Object.keys(localStorage).filter(k => k.startsWith("slimspel:woordle:progress:") && !k.includes(today()))
+    .forEach(k => localStorage.removeItem(k));
+} catch {}
+const tries = e => `${e.hints + 1} ${e.hints ? "pogingen" : "poging"}`; // ranking: hints = guesses - 1
+
+// ---------- Screen 1 ----------
+function drawSetup() {
+  $("levels").innerHTML = levels.map(l => `<button class="chip${l === level ? " on" : ""}" data-v="${l}">${LEVELS[l][0]}${playedToday(l) ? " ✓" : ""}</button>`).join("");
+  $("levels").querySelectorAll("button").forEach(b => b.onclick = () => { level = b.dataset.v; saveLocal("woordle:level", level); drawSetup(); });
+  const done = playedToday(level);
+  $("today").hidden = !done;
+  if (done) $("today").textContent = (done.score ? `Vandaag geraden in ${done.guesses} ${done.guesses > 1 ? "pogingen" : "poging"}.` : "Vandaag niet geraden.") + " Morgen is er een nieuw woord!";
+  $("go").disabled = !!done;
+  $("go").textContent = loadLocal(progressKey(today(), level), null) ? "Verder spelen" : "Start";
+  const won = history.filter(h => h.test === level && h.score);
+  $("records").textContent = won.length ? `Je hebt ${won.length} keer geraden. Beste: ${Math.min(...won.map(h => h.guesses))} pogingen.` : "Nog niet geraden op dit niveau.";
+  drawBoard("board1", level);
+}
+async function drawBoard(elId, lv) {
+  const el = $(elId);
+  el.innerHTML = `<p class="board-empty">Laden…</p>`;
+  try { el.innerHTML = boardHtml(await loadBoard(today(), "woordle-" + lv), user.uid, tries).replace("Nog niemand heeft deze puzzel vandaag opgelost.", "Nog niemand heeft het woord van vandaag geraden."); }
+  catch { el.innerHTML = `<p class="board-empty">De ranglijst is nu niet beschikbaar.</p>`; }
+}
+$("go").onclick = () => start();
+
+// ---------- Screen 2 ----------
+function show(s) { ["setup", "play", "done"].forEach(x => $(x).hidden = x !== s); }
+
+function start() {
+  const day = today();
+  if (playedToday(level)) return drawSetup();
+  const n = LEVELS[level][1];
+  const saved = loadLocal(progressKey(day, level), null);
+  S = { day, level, n, answer: wordOf(day, level), guesses: saved?.guesses || [], typed: "", done: false,
+        elapsed: saved?.elapsed || 0, resumedAt: Date.now() };
+  S.timer = setInterval(tick, 500); tick();
+  $("what").textContent = LEVELS[level][0];
+  $("rows").innerHTML = [...Array(TRIES)].map(() => `<div class="rw" style="--n:${n}">${'<div class="lt"></div>'.repeat(n)}</div>`).join("");
+  drawKeyboard();
+  $("msg").textContent = "";
+  show("play");
+  draw();
+}
+const played = () => S.elapsed + Math.floor((Date.now() - S.resumedAt) / 1000);
+function tick() { $("clock").textContent = fmt(played()); }
+function saveProgress() { if (S && !S.done) saveLocal(progressKey(S.day, S.level), { guesses: S.guesses, elapsed: played() }); }
+addEventListener("pagehide", saveProgress);
+document.addEventListener("visibilitychange", () => { if (document.hidden) saveProgress(); });
+
+// Colours for one guess. Like the real game: first the green letters, then yellow only as often
+// as the letter is still "left over" in the answer (so a double letter is not yellow twice for one letter).
+function score(guess, answer) {
+  const res = Array(guess.length).fill("miss"), left = {};
+  for (let i = 0; i < guess.length; i++) {
+    if (guess[i] === answer[i]) res[i] = "good";
+    else left[answer[i]] = (left[answer[i]] || 0) + 1;
+  }
+  for (let i = 0; i < guess.length; i++) {
+    if (res[i] !== "good" && left[guess[i]] > 0) { res[i] = "near"; left[guess[i]]--; }
+  }
+  return res;
+}
+
+function draw(flipRow = -1) {
+  const rows = $("rows").children;
+  S.guesses.forEach((g, r) => {
+    const sc = score(g, S.answer);
+    [...rows[r].children].forEach((el, i) => {
+      el.textContent = g[i];
+      el.className = "lt " + sc[i] + (r === flipRow ? " flip" : "");
+      if (r === flipRow) el.style.animationDelay = `${i * 90}ms`;
+    });
+  });
+  const r = S.guesses.length;
+  if (r < TRIES) [...rows[r].children].forEach((el, i) => { el.textContent = S.typed[i] || ""; el.className = "lt" + (S.typed[i] ? " filled" : ""); });
+  // Keyboard colours: the best colour a letter got so far
+  const rank = { good: 3, near: 2, miss: 1 }, best = {};
+  S.guesses.forEach(g => score(g, S.answer).forEach((c, i) => { if ((rank[c] || 0) > (rank[best[g[i]]] || 0)) best[g[i]] = c; }));
+  $("kb").querySelectorAll("[data-k]").forEach(k => { const c = best[k.dataset.k]; k.className = "key" + (k.dataset.k.length > 1 ? " wide" : "") + (c ? " " + c : ""); });
+}
+
+function drawKeyboard() {
+  const rows = ["qwertyuiop", "asdfghjkl", "zxcvbnm"];
+  $("kb").innerHTML = rows.map((r, i) => `<div class="r">${i === 2 ? `<button class="key wide" data-k="enter">Enter</button>` : ""}${[...r].map(ch => `<button class="key" data-k="${ch}">${ch}</button>`).join("")}${i === 2 ? `<button class="key wide" data-k="back" aria-label="wissen">⌫</button>` : ""}</div>`).join("");
+  $("kb").querySelectorAll("[data-k]").forEach(k => k.onclick = () => press(k.dataset.k));
+}
+
+function press(k) {
+  if (!S || S.done) return;
+  $("msg").textContent = "";
+  if (k === "back") S.typed = S.typed.slice(0, -1);
+  else if (k === "enter") return submit();
+  else if (/^[a-z]$/.test(k) && S.typed.length < S.n) S.typed += k;
+  draw();
+}
+document.addEventListener("keydown", e => {
+  if (!S || $("play").hidden || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.key === "Enter") { e.preventDefault(); press("enter"); }
+  else if (e.key === "Backspace") { e.preventDefault(); press("back"); }
+  else if (/^[a-zA-Z]$/.test(e.key)) press(e.key.toLowerCase());
+});
+
+function submit() {
+  const row = $("rows").children[S.guesses.length];
+  if (S.typed.length < S.n) { $("msg").textContent = `Typ ${S.n} letters.`; flash(row, "shake"); return; }
+  // Not a real word: refused, and it does not cost a turn
+  if (!valid[S.n].has(S.typed) && !answers[S.n].includes(S.typed)) { $("msg").textContent = "Dit woord ken ik niet. Probeer een ander woord."; flash(row, "shake"); return; }
+  S.guesses.push(S.typed);
+  S.typed = "";
+  draw(S.guesses.length - 1);
+  saveProgress();
+  const won = S.guesses.at(-1) === S.answer;
+  if (won || S.guesses.length === TRIES) setTimeout(() => finish(won), S.n * 90 + 450);
+}
+$("stop").onclick = () => { saveProgress(); clearInterval(S.timer); show("setup"); drawSetup(); };
+$("change").onclick = () => { show("setup"); drawSetup(); };
+
+// ---------- Screen 3 ----------
+function finish(won) {
+  S.done = true;
+  clearInterval(S.timer);
+  const time_s = played(), g = S.guesses.length;
+  const wonBefore = history.filter(h => h.test === S.level && h.score).map(h => h.guesses);
+  const prev = wonBefore.length ? Math.min(...wonBefore) : null;
+  saveLocal(progressKey(S.day, S.level), null);
+  // score 1/1 = guessed; the answer goes into `answers`, so the admin sees which words were hard
+  const attempt = { test: S.level, day: S.day, score: won ? 1 : 0, total: 1, guesses: g, time_s, word: S.answer,
+                    answers: [{ qid: S.answer, chosen: S.guesses.join(","), correct: won }], finished_at: new Date().toISOString() };
+  history.unshift({ ...attempt, module: MODULE });
+  document.querySelector("#done .saveerr")?.remove();
+  saveAttempt(user.uid, MODULE, attempt).catch(e =>
+    $("resultText").insertAdjacentHTML("afterend", `<p class="saveerr">Score niet opgeslagen (${e.code || "fout"}).</p>`));
+  // Only a guessed word goes in today's ranking: fewer guesses first, then faster
+  const posted = won ? postScore(user, profile, S.day, "woordle-" + S.level, time_s, g - 1).catch(() => {}) : Promise.resolve();
+  show("done");
+  $("result").textContent = won ? (g === 1 ? "In één keer!" : g <= 3 ? "Super goed!" : "Geraden!") : "Helaas…";
+  $("resultText").textContent = won ? `${LEVELS[S.level][0]} · ${g} ${g > 1 ? "pogingen" : "poging"} · tijd ${fmt(time_s)}` : `${LEVELS[S.level][0]} · morgen een nieuwe kans!`;
+  $("record").hidden = !won || (prev !== null && g >= prev);
+  $("record").textContent = prev === null ? "Eerste keer geraden!" : `Nieuw record! (was ${prev} pogingen)`;
+  // The word with its meaning and an example (when it comes from the nl-oefenbank pool)
+  const i = info[S.answer];
+  $("wordInfo").innerHTML = `<div>Het woord was:</div><div class="w">${esc(S.answer)}</div>` +
+    (i?.tr ? `<div>Türkçe: <b>${esc(i.tr)}</b></div>` : "") + (i?.voorbeeld ? `<div class="sub">${esc(i.voorbeeld)}</div>` : "");
+  posted.then(() => drawBoard("board2", S.level));
+}
+
+// Local tests only (never on the real site)
+if (location.hostname === "localhost") window.__woordle = () => S && { answer: S.answer, n: S.n, valid: [...valid[S.n]].slice(0, 50) };
+
+drawSetup();
+</script>
+</body>
+</html>

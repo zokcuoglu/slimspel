@@ -61,6 +61,11 @@ setTimeout(() => {
       <h3>Woordzoeker</h3>
       <p>Vind alle woorden in het rooster.</p>
     </a>
+    <a class="card" href="woordle/" data-daily="woordle">
+      <span class="ico">W</span>
+      <h3>Woordle</h3>
+      <p>Raad het woord van de dag in 6 beurten.</p>
+    </a>
     <a class="card" href="blokjes/" data-daily="blokjes">
       <span class="ico">▦</span>
       <h3>Blokjes</h3>
@@ -114,7 +119,7 @@ document.getElementById("user").innerHTML = userBox(user, profile);
 
 // How many daily puzzles there are per game today: children see 2 levels, adults 3; sudoku has 2 sizes per level
 const levels = profile.type === "child" ? 2 : 3;
-const perGame = { sudoku: 2 * levels, kruiswoord: levels, kriskras: levels, woordzoeker: levels, blokjes: levels };
+const perGame = { sudoku: 2 * levels, kruiswoord: levels, kriskras: levels, woordzoeker: levels, blokjes: levels, woordle: levels };
 
 // Put a "today" label on each daily puzzle card: how many of today's puzzles he solved
 const day = today();

@@ -75,13 +75,14 @@ export async function loadBoard(day, key) {
 }
 
 // HTML for the ranking list; the viewer's own line is highlighted
-export function boardHtml(list, myUid) {
+// extra(e): optional text shown after the time instead of the hints (e.g. Woordle: "3 pogingen")
+export function boardHtml(list, myUid, extra = null) {
   if (!list.length) return `<p class="board-empty">Nog niemand heeft deze puzzel vandaag opgelost.</p>`;
   const medal = ["🥇", "🥈", "🥉"];
   const t = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   return `<ol class="ranking">${list.slice(0, 10).map((e, i) => `<li class="${e.uid === myUid ? "me" : ""}">
     <span class="pos">${medal[i] || i + 1}</span><span class="nm">${esc(e.name)}</span>
-    <span class="tm">${t(e.time_s)}${e.hints ? ` · ${e.hints} hint${e.hints > 1 ? "s" : ""}` : ""}</span></li>`).join("")}</ol>`;
+    <span class="tm">${t(e.time_s)}${extra ? ` · ${extra(e)}` : e.hints ? ` · ${e.hints} hint${e.hints > 1 ? "s" : ""}` : ""}</span></li>`).join("")}</ol>`;
 }
 
 // Today's date in the Netherlands (YYYY-MM-DD): daily puzzles change at midnight Dutch time
