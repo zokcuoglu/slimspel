@@ -51,6 +51,11 @@ setTimeout(() => {
       <h3>Kruiswoord</h3>
       <p>Vul de woorden in met de hints.</p>
     </a>
+    <a class="card" href="paspuzzel/" data-daily="paspuzzel">
+      <span class="ico">▤</span>
+      <h3>Paspuzzel</h3>
+      <p>Zoals in een puzzelboekje, met een oplossingswoord.</p>
+    </a>
     <a class="card" href="kriskras/" data-daily="kriskras">
       <span class="ico">✚</span>
       <h3>Kriskras</h3>
@@ -119,7 +124,7 @@ document.getElementById("user").innerHTML = userBox(user, profile);
 
 // How many daily puzzles there are per game today: children see 2 levels, adults 3; sudoku has 2 sizes per level
 const levels = profile.type === "child" ? 2 : 3;
-const perGame = { sudoku: 2 * levels, kruiswoord: levels, kriskras: levels, woordzoeker: levels, blokjes: levels, woordle: levels };
+const perGame = { sudoku: 2 * levels, kruiswoord: levels, kriskras: levels, paspuzzel: levels, woordzoeker: levels, blokjes: levels, woordle: levels };
 
 // Put a "today" label on each daily puzzle card: how many of today's puzzles he solved
 const day = today();

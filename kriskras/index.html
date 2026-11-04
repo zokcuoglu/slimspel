@@ -18,7 +18,7 @@
 .game{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,260px);gap:18px;align-items:start}
 @media (max-width:700px){.game{grid-template-columns:1fr}}
 
-.cw{--w:7;display:grid;grid-template-columns:repeat(var(--w),1fr);gap:3px;width:min(100%,calc(var(--w) * 52px));margin:0 auto}
+.cw{--w:7;display:grid;grid-template-columns:repeat(var(--w),minmax(0,1fr));gap:3px;width:min(100%,calc(var(--w) * 52px));margin:0 auto}
 .sq{position:relative;aspect-ratio:1;border-radius:6px}
 .sq.on{background:var(--card);border:2px solid var(--ink);cursor:pointer;display:grid;place-items:center;font-family:var(--f-display);font-weight:700;font-size:clamp(16px,4vw,26px);color:#2f5bd3}
 .sq.word{background:color-mix(in srgb,var(--accent) 30%,var(--card))}
