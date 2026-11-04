@@ -28,6 +28,7 @@ Learning games and puzzles for kids, in Dutch: practice, puzzles and games.
 | `kriskras/` | Daily fill-in puzzle: put the listed words in the grid (same generator and word bank as the kruiswoord). Any way that fits counts as right. 2 / 1 / 1 letters given |
 | `schuifpuzzel/` | Sliding puzzle 3x3 / 4x4 / 5x5, shuffled with legal moves (always solvable). Tiles on their right square turn green. Record = fewest moves |
 | `woordle/` | Daily Wordle, same for everyone: 4 / 5 / 6 letters. Answers only from our own lists (nl-oefenbank `data/woorden.json` groep 1-6, read live, plus the kruiswoord and woordzoeker lists); the day's word is picked by hashing (day, level, word), so a new word rarely changes today's word. Guesses must be in the OpenTaal list (`geldig-N.txt`, CC BY 3.0, see `OPENTAAL-LICENSE.txt`). Afterwards the Turkish meaning and an example are shown |
+|  | `?taal=tr` = Turkish Woordle with a Turkish screen (linked from nl-oefenbank): answers = hand-picked everyday words (`tr-cevap-N.txt`), guesses = TDK headwords (`tr-geldig-N.txt`, from github.com/bilalozdemir/tr-word-list, CC BY-SA 4.0), meanings in `tr-anlam.json`. Own statistics (played, % guessed, streak, guess distribution) and day/week/month rankings for everyone from `woordle_plays` (points 6..1, 0 when not guessed). The Dutch end screen shows meaning, de/het, word type, groep, theme, example, where the word is used in Slimspel and in Nieuws in niveaus, and a WikiWoordenboek link for the origin |
 
 ## Adding a module
 

@@ -85,6 +85,23 @@ export function boardHtml(list, myUid, extra = null) {
     <span class="tm">${t(e.time_s)}${extra ? ` · ${extra(e)}` : e.hints ? ` · ${e.hints} hint${e.hints > 1 ? "s" : ""}` : ""}</span></li>`).join("")}</ol>`;
 }
 
+// ---------- Woordle results (everyone, for statistics and day/week/month rankings) ----------
+// woordle_plays/{lang-level-day-uid}: { uid, name (first name), lang, level, day, won, guesses, time_s, at }
+// Written once per person per word (see nl-oefenbank/firestore.rules); a second write is refused, which is fine.
+export function saveWoordlePlay(user, profile, play) {
+  const name = (profile.name || user.displayName || "?").trim().split(/\s+/)[0];
+  const id = `${play.lang}-${play.level}-${play.day}-${user.uid}`;
+  return setDoc(doc(db, "woordle_plays", id), {
+    uid: user.uid, name: name.slice(0, 40), lang: play.lang, level: play.level, day: play.day,
+    won: !!play.won, guesses: Math.round(play.guesses), time_s: Math.max(0, Math.round(play.time_s)), at: new Date().toISOString()
+  });
+}
+// All Woordle results from `fromDay` (YYYY-MM-DD) up to today, every player
+export async function loadWoordlePlays(fromDay) {
+  const snap = await getDocs(query(collection(db, "woordle_plays"), where("day", ">=", fromDay)));
+  return snap.docs.map(d => d.data());
+}
+
 // Today's date in the Netherlands (YYYY-MM-DD): daily puzzles change at midnight Dutch time
 export const today = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Amsterdam" }).format(new Date());
 
