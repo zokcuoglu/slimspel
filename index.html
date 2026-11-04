@@ -7,6 +7,12 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Andika:wght@400;700&family=Fredoka:wght@500;600;700&display=swap">
 <link rel="stylesheet" href="css/site.css">
+<style>
+/* Home only: group intro line and the "today" label on the daily puzzles */
+.group-sub{color:var(--muted);margin:-4px 0 10px;font-size:15px}
+.card .tag.todo{border-color:var(--accent);color:var(--ink);background:color-mix(in srgb,var(--accent) 30%,var(--card))}
+.card .tag.done{border-color:var(--good);color:var(--good);background:var(--good-bg)}
+</style>
 </head>
 <body>
 <!-- Covers the page until js/core.js has checked the login. If core.js never loads
@@ -20,7 +26,10 @@ setTimeout(() => {
 }, 10000);
 </script>
 <main class="wrap">
-  <!-- Home page: one card per module, grouped. "soon" cards are not clickable yet. -->
+  <!-- Home page in three groups:
+       1. the daily puzzles (new every day, same for everyone, with a ranking) and how many he did today
+       2. practice with school things (tables, sums, knowledge, words)
+       3. thinking games without a daily puzzle -->
   <header class="top">
     <div>
       <h1><mark>Slim</mark>spel</h1>
@@ -28,6 +37,36 @@ setTimeout(() => {
     </div>
     <span id="user"></span>
   </header>
+
+  <h2 class="group">Puzzel van de dag</h2>
+  <p class="group-sub" id="todaySum">Elke dag nieuw, voor iedereen dezelfde. Wie is het snelst?</p>
+  <div class="cards">
+    <a class="card" href="sudoku/" data-daily="sudoku">
+      <span class="ico">4</span>
+      <h3>Sudoku</h3>
+      <p>Elk getal één keer in elke rij, kolom en blok.</p>
+    </a>
+    <a class="card" href="kruiswoord/" data-daily="kruiswoord">
+      <span class="ico">#</span>
+      <h3>Kruiswoord</h3>
+      <p>Vul de woorden in met de hints.</p>
+    </a>
+    <a class="card" href="kriskras/" data-daily="kriskras">
+      <span class="ico">✚</span>
+      <h3>Kriskras</h3>
+      <p>Zet de woorden uit de lijst op de goede plek.</p>
+    </a>
+    <a class="card" href="woordzoeker/" data-daily="woordzoeker">
+      <span class="ico">A</span>
+      <h3>Woordzoeker</h3>
+      <p>Vind alle woorden in het rooster.</p>
+    </a>
+    <a class="card" href="blokjes/" data-daily="blokjes">
+      <span class="ico">▦</span>
+      <h3>Blokjes</h3>
+      <p>Pas alle blokjes in het vak, zonder gaatjes.</p>
+    </a>
+  </div>
 
   <h2 class="group">Oefenen</h2>
   <div class="cards">
@@ -41,29 +80,6 @@ setTimeout(() => {
       <h3>Algemene kennis</h3>
       <p>Landen, talen, voetbal, dieren en meer.</p>
     </a>
-  </div>
-
-  <h2 class="group">Puzzels</h2>
-  <div class="cards">
-    <a class="card" href="sudoku/">
-      <span class="ico">4</span>
-      <h3>Sudoku</h3>
-      <p>4×4 en 6×6. Elke dag een nieuwe.</p>
-    </a>
-    <a class="card" href="woordzoeker/">
-      <span class="ico">A</span>
-      <h3>Woordzoeker</h3>
-      <p>Vind alle woorden in het rooster. Elke dag een nieuwe.</p>
-    </a>
-    <a class="card" href="kruiswoord/">
-      <span class="ico">#</span>
-      <h3>Kruiswoord</h3>
-      <p>Vul de woorden in met de hints. Elke dag een nieuwe.</p>
-    </a>
-  </div>
-
-  <h2 class="group">Spellen</h2>
-  <div class="cards">
     <a class="card" href="memory/">
       <span class="ico">◧</span>
       <h3>Memory</h3>
@@ -72,7 +88,16 @@ setTimeout(() => {
     <a class="card" href="snake/">
       <span class="ico">S</span>
       <h3>Snake</h3>
-      <p>Eet het goede antwoord en groei.</p>
+      <p>Eet het goede antwoord: tafels of plus en min.</p>
+    </a>
+  </div>
+
+  <h2 class="group">Denkspellen</h2>
+  <div class="cards">
+    <a class="card" href="schuifpuzzel/">
+      <span class="ico">⇄</span>
+      <h3>Schuifpuzzel</h3>
+      <p>Schuif de getallen op volgorde.</p>
     </a>
     <a class="card" href="2048/">
       <span class="ico">2</span>
@@ -83,9 +108,29 @@ setTimeout(() => {
 </main>
 <script type="module">
 // Only approved accounts get past this line; then show who is logged in
-import { gate, userBox } from "./js/core.js";
+import { gate, userBox, loadAttempts, today } from "./js/core.js";
 const { user, profile } = await gate();
 document.getElementById("user").innerHTML = userBox(user, profile);
+
+// How many daily puzzles there are per game today: children see 2 levels, adults 3; sudoku has 2 sizes per level
+const levels = profile.type === "child" ? 2 : 3;
+const perGame = { sudoku: 2 * levels, kruiswoord: levels, kriskras: levels, woordzoeker: levels, blokjes: levels };
+
+// Put a "today" label on each daily puzzle card: how many of today's puzzles he solved
+const day = today();
+let doneAll = 0, totalAll = 0;
+await Promise.all(Object.entries(perGame).map(async ([game, total]) => {
+  let done = 0;
+  try { done = new Set((await loadAttempts(user.uid, "slimspel-" + game)).filter(a => a.day === day).map(a => a.test)).size; } catch {}
+  done = Math.min(done, total);
+  doneAll += done; totalAll += total;
+  const card = document.querySelector(`[data-daily="${game}"]`);
+  card.insertAdjacentHTML("afterbegin", done >= total
+    ? `<span class="tag done">Vandaag klaar ✓</span>`
+    : `<span class="tag${done ? " todo" : ""}">Vandaag ${done}/${total}</span>`);
+}));
+document.getElementById("todaySum").textContent =
+  `Elke dag nieuw, voor iedereen dezelfde. Vandaag opgelost: ${doneAll} van ${totalAll}.`;
 </script>
 </body>
 </html>

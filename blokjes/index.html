@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blokjes · Slimspel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Andika:wght@400;700&family=Fredoka:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="../css/site.css">
+<style>
+/* Page-specific styles for blokjes */
+.label{font-family:var(--f-display);font-weight:600;margin-top:22px;margin-bottom:8px}
+.choice{display:flex;flex-wrap:wrap;gap:8px}
+.choice .chip{font-size:17px;padding:8px 16px}
+.records{margin-top:18px;color:var(--muted);font-size:15px}
+.today{margin-top:14px;font-family:var(--f-display);font-weight:600}
+.bar{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+.tip{color:var(--muted);font-size:15px;margin:0 0 12px}
+
+/* --cs = size of one square, the same on the board and in the tray, so a piece looks the same everywhere */
+.game{--cs:56px;display:flex;flex-direction:column;align-items:center;gap:18px;touch-action:none;user-select:none;-webkit-user-select:none}
+.board{display:grid;grid-template-columns:repeat(var(--w),var(--cs));grid-auto-rows:var(--cs);border:3px solid var(--ink);border-radius:10px;overflow:hidden;background:var(--card)}
+.bc{border-right:1px dashed var(--line);border-bottom:1px dashed var(--line)}
+.bc.on{border-color:rgba(0,0,0,.08);cursor:grab}
+.tray{display:flex;flex-wrap:wrap;gap:16px;justify-content:center;min-height:calc(var(--cs) * 1.2);width:100%;padding:12px;border-radius:12px;background:color-mix(in srgb,var(--line) 45%,transparent)}
+.pc{display:grid;grid-template-columns:repeat(var(--pw),var(--cs));grid-auto-rows:var(--cs);cursor:grab}
+.pc .sq,.ghost .sq{border-radius:6px;border:2px solid rgba(0,0,0,.18)}
+.pc .gap,.ghost .gap{visibility:hidden}
+.ghost{position:fixed;z-index:50;pointer-events:none;display:grid;grid-template-columns:repeat(var(--pw),var(--cs));grid-auto-rows:var(--cs);opacity:.85}
+.locked{cursor:default!important}
+.tools{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+@keyframes good{0%,60%{filter:brightness(1.25)}100%{}}
+.board.solved{animation:good .9s ease-out}
+
+.big{font-family:var(--f-display);font-weight:700;font-size:clamp(40px,10vw,60px);line-height:1.1}
+.record{display:inline-block;background:var(--accent);color:var(--accent-ink);font-family:var(--f-display);font-weight:600;border-radius:99px;padding:3px 12px;margin-top:8px}
+</style>
+</head>
+<body>
+<!-- Covers the page until js/core.js has checked the login (see index.html of the site) -->
+<div id="gate"><div class="gc"><p>Laden…</p></div></div>
+<script>
+setTimeout(() => {
+  if (window.__slimReady) return;
+  document.querySelector("#gate .gc").innerHTML =
+    "<h2>Laden lukt niet</h2><p>Ververs de pagina. Gaat het nog steeds mis? Vraag het aan Zana.</p>";
+}, 10000);
+</script>
+<main class="wrap">
+  <div class="top">
+    <a class="back" href="../">← Slimspel</a>
+    <span id="user"></span>
+  </div>
+
+  <!-- Screen 1: level -->
+  <section id="setup">
+    <h1><mark>Blokjes</mark></h1>
+    <p class="sub">Sleep alle blokjes in het vak, zodat er geen gaatje overblijft.<br>Elke dag is er per niveau één nieuwe puzzel, voor iedereen dezelfde.</p>
+    <div class="label">Niveau</div>
+    <div class="choice" id="levels"></div>
+    <p class="sub" id="levelInfo"></p>
+    <p class="today" id="today" hidden></p>
+    <div class="row" style="margin-top:18px"><button class="btn primary" id="go">Start</button></div>
+    <p class="records" id="records"></p>
+    <div class="board-box"><h3>Vandaag</h3><div id="board1"></div></div>
+  </section>
+
+  <!-- Screen 2: the puzzle -->
+  <section id="play" hidden>
+    <div class="bar">
+      <span class="chip" id="what"></span>
+      <span class="chip" id="count"></span>
+      <span class="chip" id="clock">0:00</span>
+    </div>
+    <p class="tip" id="tip"></p>
+    <div class="game" id="game">
+      <div class="board" id="board"></div>
+      <div class="tray" id="tray"></div>
+      <div class="tools">
+        <button class="btn" id="hint">Hint</button>
+        <button class="btn" id="reset">Alles terug</button>
+        <button class="btn" id="stop">← Terug</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Screen 3: solved -->
+  <section id="done" hidden>
+    <div class="panel">
+      <div class="big">Past precies!</div>
+      <p class="sub" id="resultText"></p>
+      <span class="record" id="record" hidden></span>
+      <div class="board-box"><h3>Vandaag</h3><div id="board2"></div></div>
+    </div>
+    <div class="row" style="margin-top:16px">
+      <button class="btn primary" id="change">Ander niveau van vandaag</button>
+    </div>
+  </section>
+</main>
+
+<script type="module">
+import { gate, userBox, saveAttempt, loadAttempts, loadLocal, saveLocal, postScore, loadBoard, boardHtml, today } from "../js/core.js";
+import { makePuzzle, seededRandom, rotate } from "./engine.js";
+
+const MODULE = "slimspel-blokjes";
+const LEVELS = { makkelijk: "Makkelijk", normaal: "Normaal", moeilijk: "Moeilijk" };
+const LEVEL_INFO = {
+  makkelijk: "4 × 4 vak, 4 blokjes. Ze staan al goed gedraaid.",
+  normaal: "5 × 5 vak, 6 blokjes. Klik op een blokje om het te draaien.",
+  moeilijk: "6 × 6 vak, 8 blokjes, ook draaien."
+};
+const COLORS = ["#ff8a4d", "#3fb57a", "#2f8fd8", "#ffd84d", "#c06ad6", "#ff6b81", "#30b5b0", "#a1887f"];
+const $ = id => document.getElementById(id);
+
+const { user, profile } = await gate({ seen: MODULE });
+$("user").innerHTML = userBox(user, profile);
+
+// Children see two levels, adults all three (same rule as the other daily puzzles)
+const levels = profile.type === "child" ? ["makkelijk", "normaal"] : Object.keys(LEVELS);
+let history = [];
+try { history = await loadAttempts(user.uid, MODULE); } catch {}
+
+let level = loadLocal("blokjes:level", "makkelijk");
+if (!levels.includes(level)) level = "makkelijk";
+let S = null;
+
+const fmt = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+const solvedToday = lv => history.find(h => h.test === lv && h.day === today());
+const progressKey = (day, lv) => `blokjes:progress:${day}:${lv}`;
+try { // forget unfinished puzzles of earlier days
+  Object.keys(localStorage).filter(k => k.startsWith("slimspel:blokjes:progress:") && !k.includes(today()))
+    .forEach(k => localStorage.removeItem(k));
+} catch {}
+
+// ---------- Screen 1 ----------
+function drawSetup() {
+  $("levels").innerHTML = levels.map(l =>
+    `<button class="chip${l === level ? " on" : ""}" data-v="${l}">${LEVELS[l]}${solvedToday(l) ? " ✓" : ""}</button>`).join("");
+  $("levels").querySelectorAll("button").forEach(b => b.onclick = () => { level = b.dataset.v; saveLocal("blokjes:level", level); drawSetup(); });
+  $("levelInfo").textContent = LEVEL_INFO[level];
+  const done = solvedToday(level);
+  $("today").hidden = !done;
+  if (done) $("today").textContent = `Vandaag opgelost in ${fmt(done.time_s)}${done.hints ? ` met ${done.hints} hint${done.hints > 1 ? "s" : ""}` : ""}. Morgen is er een nieuwe puzzel!`;
+  $("go").disabled = !!done;
+  $("go").textContent = loadLocal(progressKey(today(), level), null) ? "Verder spelen" : "Start";
+  const t = history.filter(h => h.test === level && !h.hints).map(h => h.time_s);
+  $("records").textContent = t.length ? `Jouw record (zonder hints): ${fmt(Math.min(...t))}` : "Nog geen record voor dit niveau.";
+  drawBoard("board1", level);
+}
+async function drawBoard(elId, lv) {
+  const el = $(elId);
+  el.innerHTML = `<p class="board-empty">Laden…</p>`;
+  try { el.innerHTML = boardHtml(await loadBoard(today(), "blokjes-" + lv), user.uid); }
+  catch { el.innerHTML = `<p class="board-empty">De ranglijst is nu niet beschikbaar.</p>`; }
+}
+$("go").onclick = () => start();
+
+// ---------- Screen 2: state ----------
+// Each piece: rot = quarter turns from its solved shape, at = { r, c } on the board or null (in the tray)
+function show(s) { ["setup", "play", "done"].forEach(x => $(x).hidden = x !== s); }
+
+function start() {
+  const day = today();
+  if (solvedToday(level)) return drawSetup();
+  // Same seed for everybody on the same day -> the same puzzle for everybody
+  const P = makePuzzle(level, seededRandom(`${day}|blokjes|${level}`));
+  const saved = loadLocal(progressKey(day, level), null);
+  S = { day, level, P, done: false, elapsed: saved?.elapsed || 0, resumedAt: Date.now(),
+        hintsUsed: saved?.hintsUsed || 0, hinted: new Set(saved?.hinted || []),
+        pieces: P.pieces.map((p, k) => saved?.pieces?.[k] || { rot: p.turn, at: null }) };
+  S.timer = setInterval(tick, 500); tick();
+  $("what").textContent = LEVELS[level];
+  $("tip").textContent = S.P.pieces.some(p => p.turn) ? "Sleep een blokje naar het vak. Klik op een blokje om het te draaien." : "Sleep een blokje naar het vak.";
+  show("play");
+  sizeSquares();
+  draw();
+}
+const played = () => S.elapsed + Math.floor((Date.now() - S.resumedAt) / 1000);
+function tick() { $("clock").textContent = fmt(played()); }
+function saveProgress() {
+  if (!S || S.done) return;
+  saveLocal(progressKey(S.day, S.level), { pieces: S.pieces, hinted: [...S.hinted], hintsUsed: S.hintsUsed, elapsed: played() });
+}
+addEventListener("pagehide", saveProgress);
+document.addEventListener("visibilitychange", () => { if (document.hidden) saveProgress(); });
+
+const shapeOf = k => rotate(S.P.pieces[k].solved, S.pieces[k].rot);
+// Which piece covers each board square (-1 = empty)
+function occupancy(skip = -1) {
+  const occ = new Array(S.P.w * S.P.h).fill(-1);
+  S.pieces.forEach((p, k) => {
+    if (!p.at || k === skip) return;
+    for (const [r, c] of shapeOf(k)) occ[(p.at.r + r) * S.P.w + p.at.c + c] = k;
+  });
+  return occ;
+}
+// Does piece k fit with its top-left at (r, c)?
+function fits(k, r, c) {
+  const occ = occupancy(k);
+  return shapeOf(k).every(([dr, dc]) => {
+    const y = r + dr, x = c + dc;
+    return y >= 0 && x >= 0 && y < S.P.h && x < S.P.w && occ[y * S.P.w + x] === -1;
+  });
+}
+
+// Square size: as big as fits on the screen (max 56 px)
+function sizeSquares() {
+  const avail = Math.min($("game").clientWidth || 600, 520);
+  const cs = Math.max(30, Math.min(56, Math.floor(avail / (S.P.w + 0.2))));
+  $("game").style.setProperty("--cs", cs + "px");
+  S.cs = cs;
+}
+addEventListener("resize", () => { if (S && !$("play").hidden) { sizeSquares(); draw(); } });
+
+// HTML of a shape as a small grid (used in the tray and for the piece under the finger)
+function shapeHtml(k, cls, extra = "") {
+  const shape = shapeOf(k);
+  const w = Math.max(...shape.map(x => x[1])) + 1, h = Math.max(...shape.map(x => x[0])) + 1;
+  const set = new Set(shape.map(([r, c]) => r + "," + c));
+  let cells = "";
+  for (let r = 0; r < h; r++) for (let c = 0; c < w; c++)
+    cells += set.has(r + "," + c) ? `<div class="sq" data-r="${r}" data-c="${c}" style="background:${COLORS[k % COLORS.length]}"></div>` : `<div class="gap"></div>`;
+  return `<div class="${cls}" data-k="${k}" style="--pw:${w}" ${extra}>${cells}</div>`;
+}
+
+function draw() {
+  const { w, h } = S.P, occ = occupancy();
+  $("board").style.setProperty("--w", w);
+  $("board").innerHTML = occ.map((k, i) => k === -1
+    ? `<div class="bc" data-i="${i}"></div>`
+    : `<div class="bc on${S.hinted.has(k) ? " locked" : ""}" data-i="${i}" data-k="${k}" style="background:${COLORS[k % COLORS.length]}"></div>`).join("");
+  // the piece being dragged is under the finger, so it is not shown in the tray
+  const inTray = S.pieces.map((p, k) => p.at || (drag?.moved && drag.k === k) ? null : k).filter(k => k !== null);
+  $("tray").innerHTML = inTray.length ? inTray.map(k => shapeHtml(k, "pc")).join("") : `<p class="tip" style="margin:auto">Alle blokjes liggen in het vak.</p>`;
+  $("count").textContent = `${S.pieces.filter(p => p.at).length} / ${S.pieces.length} blokjes`;
+}
+
+// ---------- Dragging ----------
+// Press on a piece (in the tray or on the board), move, let go above the board.
+// A short click without moving turns a tray piece a quarter (on the levels with turning).
+let drag = null;
+$("game").addEventListener("pointerdown", e => {
+  if (!S || S.done) return;
+  const sq = e.target.closest(".pc .sq, .bc.on");
+  if (!sq) return;
+  const k = Number(sq.closest("[data-k]").dataset.k);
+  if (S.hinted.has(k)) return; // a piece placed by a hint stays put
+  let gr, gc;
+  if (sq.classList.contains("bc")) {
+    // grabbed on the board: which square of the piece is this?
+    const i = Number(sq.dataset.i), at = S.pieces[k].at;
+    gr = Math.floor(i / S.P.w) - at.r; gc = i % S.P.w - at.c;
+  } else { gr = Number(sq.dataset.r); gc = Number(sq.dataset.c); }
+  e.preventDefault();
+  drag = { k, gr, gc, x: e.clientX, y: e.clientY, moved: false, from: S.pieces[k].at, ghost: null };
+});
+addEventListener("pointermove", e => {
+  if (!drag) return;
+  if (!drag.moved && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 6) return;
+  if (!drag.moved) {
+    // start of a real drag: take the piece off the board and show it under the finger
+    drag.moved = true;
+    S.pieces[drag.k].at = null;
+    draw();
+    const holder = document.createElement("div");
+    holder.innerHTML = shapeHtml(drag.k, "ghost");
+    drag.ghost = holder.firstChild;
+    $("game").appendChild(drag.ghost);
+  }
+  // the grabbed square stays under the pointer
+  drag.ghost.style.left = (e.clientX - (drag.gc + 0.5) * S.cs) + "px";
+  drag.ghost.style.top = (e.clientY - (drag.gr + 0.5) * S.cs) + "px";
+});
+addEventListener("pointerup", e => {
+  if (!drag) return;
+  const d = drag; drag = null;
+  if (!d.moved) {
+    // a click: turn a tray piece (only where turning is part of the level)
+    if (!d.from && S.P.pieces.some(p => p.turn)) { S.pieces[d.k].rot = (S.pieces[d.k].rot + 1) % 4; draw(); saveProgress(); }
+    return;
+  }
+  d.ghost.remove();
+  const cell = document.elementFromPoint(e.clientX, e.clientY)?.closest(".bc");
+  if (cell) {
+    const i = Number(cell.dataset.i), r = Math.floor(i / S.P.w) - d.gr, c = i % S.P.w - d.gc;
+    if (fits(d.k, r, c)) S.pieces[d.k].at = { r, c };
+  }
+  draw();
+  saveProgress();
+  checkDone();
+});
+
+// ---------- Buttons ----------
+// Hint: one piece jumps to its place (turned right); pieces in the way go back to the tray
+$("hint").onclick = () => {
+  if (!S || S.done) return;
+  const k = S.P.pieces.findIndex((p, j) => !S.hinted.has(j) && !(S.pieces[j].rot === 0 && S.pieces[j].at?.r === p.home.r && S.pieces[j].at?.c === p.home.c));
+  if (k < 0) return;
+  const p = S.P.pieces[k];
+  S.pieces[k] = { rot: 0, at: null };
+  const target = new Set(p.solved.map(([r, c]) => (p.home.r + r) * S.P.w + p.home.c + c));
+  const occ = occupancy();
+  for (const i of target) if (occ[i] !== -1 && !S.hinted.has(occ[i])) S.pieces[occ[i]].at = null;
+  S.pieces[k].at = { ...p.home };
+  S.hinted.add(k);
+  S.hintsUsed++;
+  draw(); saveProgress(); checkDone();
+};
+$("reset").onclick = () => { S.pieces.forEach((p, k) => { if (!S.hinted.has(k)) p.at = null; }); draw(); saveProgress(); };
+$("stop").onclick = () => { saveProgress(); clearInterval(S.timer); show("setup"); drawSetup(); };
+$("change").onclick = () => { show("setup"); drawSetup(); };
+
+// ---------- Screen 3 ----------
+// Pieces never overlap and their squares add up to the frame, so all pieces placed = solved
+function checkDone() {
+  if (S.done || S.pieces.some(p => !p.at)) return;
+  S.done = true;
+  clearInterval(S.timer);
+  $("board").classList.add("solved");
+  const time_s = played(), hints = S.hintsUsed, n = S.pieces.length;
+  const earlier = history.filter(h => h.test === S.level && !h.hints).map(h => h.time_s);
+  const prev = earlier.length ? Math.min(...earlier) : null;
+  saveLocal(progressKey(S.day, S.level), null);
+  // score = pieces he placed himself, total = pieces
+  const attempt = { test: S.level, day: S.day, score: Math.max(0, n - hints), total: n, hints, time_s,
+                    answers: [], finished_at: new Date().toISOString() };
+  history.unshift({ ...attempt, module: MODULE });
+  document.querySelector("#done .saveerr")?.remove();
+  saveAttempt(user.uid, MODULE, attempt).catch(e =>
+    $("resultText").insertAdjacentHTML("afterend", `<p class="saveerr">Score niet opgeslagen (${e.code || "fout"}).</p>`));
+  const posted = postScore(user, profile, S.day, "blokjes-" + S.level, time_s, hints).catch(() => {});
+  setTimeout(() => {
+    $("board").classList.remove("solved");
+    show("done");
+    $("resultText").textContent = `${LEVELS[S.level]} · ${n} blokjes · tijd ${fmt(time_s)}` + (hints ? ` · ${hints} hint${hints > 1 ? "s" : ""}` : " · zonder hints");
+    $("record").hidden = !!hints || (prev !== null && time_s >= prev);
+    $("record").textContent = prev === null ? "Eerste record!" : `Nieuw record! (was ${fmt(prev)})`;
+    posted.then(() => drawBoard("board2", S.level));
+  }, 1000);
+}
+
+// Local tests only (never on the real site): let the test read the puzzle
+if (location.hostname === "localhost") window.__blokjes = () => S && { P: S.P, pieces: S.pieces, cs: S.cs };
+
+drawSetup();
+</script>
+</body>
+</html>

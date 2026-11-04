@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Schuifpuzzel · Slimspel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Andika:wght@400;700&family=Fredoka:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="../css/site.css">
+<style>
+/* Page-specific styles for the sliding puzzle */
+.label{font-family:var(--f-display);font-weight:600;margin-top:22px;margin-bottom:8px}
+.choice{display:flex;flex-wrap:wrap;gap:8px}
+.choice .chip{font-size:17px;padding:8px 16px}
+.records{margin-top:18px;color:var(--muted);font-size:15px}
+.bar{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+.tip{color:var(--muted);font-size:15px;margin:0 0 12px}
+
+/* Same sliding technique as 2048: tiles float on the board and move with a transition */
+.board{--n:3;--gap:8px;position:relative;width:min(100%,400px);aspect-ratio:1;margin:0 auto;background:color-mix(in srgb,var(--line) 70%,var(--muted));border-radius:14px;padding:var(--gap);user-select:none;-webkit-user-select:none;touch-action:none}
+.layer{position:absolute;inset:var(--gap)}
+.t{position:absolute;top:0;left:0;width:calc((100% - (var(--n) - 1) * var(--gap)) / var(--n));height:calc((100% - (var(--n) - 1) * var(--gap)) / var(--n));
+   transform:translate(calc(var(--c) * (100% + var(--gap))),calc(var(--r) * (100% + var(--gap))));transition:transform .12s ease-in-out;
+   display:grid;place-items:center;border-radius:10px;background:var(--card);box-shadow:0 3px 0 rgba(0,0,0,.18);cursor:pointer;
+   font-family:var(--f-display);font-weight:700;font-size:clamp(20px,calc(28vw / var(--n)),44px);color:var(--ink)}
+.t.home{background:var(--good-bg);color:var(--good)}        /* this number is on its right square */
+.t.can{outline:3px solid var(--accent);outline-offset:-3px}  /* this tile can move now */
+@media (prefers-reduced-motion: reduce){.t{transition:none}}
+@keyframes good{0%,60%{filter:brightness(1.2)}100%{}}
+.board.solved{animation:good .9s ease-out}
+
+.tools{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:14px}
+.big{font-family:var(--f-display);font-weight:700;font-size:clamp(40px,10vw,60px);line-height:1.1}
+.record{display:inline-block;background:var(--accent);color:var(--accent-ink);font-family:var(--f-display);font-weight:600;border-radius:99px;padding:3px 12px;margin-top:8px}
+</style>
+</head>
+<body>
+<!-- Covers the page until js/core.js has checked the login (see index.html of the site) -->
+<div id="gate"><div class="gc"><p>Laden…</p></div></div>
+<script>
+setTimeout(() => {
+  if (window.__slimReady) return;
+  document.querySelector("#gate .gc").innerHTML =
+    "<h2>Laden lukt niet</h2><p>Ververs de pagina. Gaat het nog steeds mis? Vraag het aan Zana.</p>";
+}, 10000);
+</script>
+<main class="wrap">
+  <div class="top">
+    <a class="back" href="../">← Slimspel</a>
+    <span id="user"></span>
+  </div>
+
+  <!-- Screen 1: size -->
+  <section id="setup">
+    <h1><mark>Schuif</mark>puzzel</h1>
+    <p class="sub">Schuif de tegels via het lege vakje tot alle getallen op volgorde staan: 1, 2, 3 … met het lege vakje rechtsonder.</p>
+    <div class="label">Niveau</div>
+    <div class="choice" id="levels"></div>
+    <div class="row" style="margin-top:22px"><button class="btn primary" id="go">Start</button></div>
+    <p class="records" id="records"></p>
+  </section>
+
+  <!-- Screen 2: the puzzle -->
+  <section id="play" hidden>
+    <div class="bar">
+      <span class="chip" id="what"></span>
+      <span class="chip" id="moves">0 zetten</span>
+      <span class="chip" id="clock">0:00</span>
+    </div>
+    <p class="tip">Klik op een tegel naast het lege vakje (of gebruik de pijltjes). Groen = staat al goed.</p>
+    <div class="board" id="board"><div class="layer" id="layer"></div></div>
+    <div class="tools">
+      <button class="btn" id="restart">Opnieuw husselen</button>
+      <button class="btn" id="stop">← Terug</button>
+    </div>
+  </section>
+
+  <!-- Screen 3: solved -->
+  <section id="done" hidden>
+    <div class="panel">
+      <div class="big">Op volgorde!</div>
+      <p class="sub" id="resultText"></p>
+      <span class="record" id="record" hidden></span>
+    </div>
+    <div class="row" style="margin-top:16px">
+      <button class="btn primary" id="again">Nog een keer</button>
+      <button class="btn" id="change">Ander niveau</button>
+    </div>
+  </section>
+</main>
+
+<script type="module">
+import { gate, userBox, saveAttempt, loadAttempts, loadLocal, saveLocal } from "../js/core.js";
+
+const MODULE = "slimspel-schuifpuzzel";
+// n = tiles per side, mix = random moves used to shuffle
+const LEVELS = { makkelijk: ["Makkelijk · 3 × 3", 3, 60], normaal: ["Normaal · 4 × 4", 4, 160], moeilijk: ["Moeilijk · 5 × 5", 5, 300] };
+const $ = id => document.getElementById(id);
+
+const { user, profile } = await gate({ seen: MODULE });
+$("user").innerHTML = userBox(user, profile);
+
+const levels = profile.type === "child" ? ["makkelijk", "normaal"] : Object.keys(LEVELS);
+let history = [];
+loadAttempts(user.uid, MODULE).then(l => { history = l; drawRecords(); }).catch(() => {});
+let level = loadLocal("schuif:level", "makkelijk");
+if (!levels.includes(level)) level = "makkelijk";
+let S = null;
+const fmt = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+
+// ---------- Screen 1 ----------
+function drawSetup() {
+  $("levels").innerHTML = levels.map(l => `<button class="chip${l === level ? " on" : ""}" data-v="${l}">${LEVELS[l][0]}</button>`).join("");
+  $("levels").querySelectorAll("button").forEach(b => b.onclick = () => { level = b.dataset.v; saveLocal("schuif:level", level); drawSetup(); });
+  drawRecords();
+}
+const best = lv => { const t = history.filter(h => h.test === lv).map(h => h.moves); return t.length ? Math.min(...t) : null; };
+function drawRecords() { const b = best(level); $("records").textContent = b === null ? "Nog geen record." : `Jouw record: ${b} zetten`; }
+$("go").onclick = () => start();
+
+// ---------- The puzzle ----------
+// pos[v] = square of tile v (v = 1 .. n*n-1); `blank` = the empty square. Solved: tile v on square v-1, blank last.
+function show(s) { ["setup", "play", "done"].forEach(x => $(x).hidden = x !== s); }
+
+function start() {
+  const [, n, mix] = LEVELS[level];
+  S = { level, n, moves: 0, startedAt: Date.now(), done: false };
+  // Shuffle by making random legal moves from the solved board, so it can always be solved
+  // (a fully random order can be impossible to solve in this puzzle)
+  const at = [...Array(n * n).keys()].map(i => i + 1); at[n * n - 1] = 0; // at[square] = tile, 0 = blank
+  let blank = n * n - 1, last = -1;
+  do {
+    for (let k = 0; k < mix; k++) {
+      const opts = neighbours(blank, n).filter(q => q !== last);
+      const q = opts[Math.floor(Math.random() * opts.length)];
+      [at[blank], at[q]] = [at[q], at[blank]]; last = blank; blank = q;
+    }
+  } while (isSolved(at, n));
+  S.at = at; S.blank = blank;
+  clearInterval(S.timer);
+  S.timer = setInterval(() => $("clock").textContent = fmt(Math.floor((Date.now() - S.startedAt) / 1000)), 500);
+  $("clock").textContent = "0:00";
+  $("what").textContent = LEVELS[level][0];
+  $("board").style.setProperty("--n", n);
+  // One element per tile; draw() only moves them
+  $("layer").innerHTML = [...Array(n * n - 1)].map((_, k) => `<div class="t" data-v="${k + 1}">${k + 1}</div>`).join("");
+  $("layer").querySelectorAll(".t").forEach(el => el.onclick = () => clickTile(Number(el.dataset.v)));
+  show("play");
+  draw();
+}
+function neighbours(i, n) {
+  const r = Math.floor(i / n), c = i % n, out = [];
+  if (r > 0) out.push(i - n); if (r < n - 1) out.push(i + n);
+  if (c > 0) out.push(i - 1); if (c < n - 1) out.push(i + 1);
+  return out;
+}
+const isSolved = (at, n) => at.every((v, i) => i === n * n - 1 ? v === 0 : v === i + 1);
+
+function draw() {
+  const n = S.n, can = new Set(neighbours(S.blank, n));
+  S.at.forEach((v, i) => {
+    if (!v) return;
+    const el = $("layer").querySelector(`[data-v="${v}"]`);
+    el.style.setProperty("--r", Math.floor(i / n));
+    el.style.setProperty("--c", i % n);
+    el.classList.toggle("home", i === v - 1);
+    el.classList.toggle("can", can.has(i) && !S.done);
+  });
+  $("moves").textContent = `${S.moves} zet${S.moves === 1 ? "" : "ten"}`;
+}
+
+// Clicking a tile in the same row or column as the blank slides it (and the tiles between) towards the blank
+function clickTile(v) {
+  if (S.done) return;
+  const n = S.n, i = S.at.indexOf(v), b = S.blank;
+  const sameRow = Math.floor(i / n) === Math.floor(b / n), sameCol = i % n === b % n;
+  if (!sameRow && !sameCol) return;
+  const step = sameRow ? (i > b ? 1 : -1) : (i > b ? n : -n);
+  // move one tile at a time, from the one next to the blank up to the clicked one
+  while (S.blank !== i) slide(S.blank + step);
+  afterMove();
+}
+function slide(q) { // the tile on square q moves into the blank
+  [S.at[S.blank], S.at[q]] = [S.at[q], S.at[S.blank]];
+  S.blank = q;
+  S.moves++;
+}
+function afterMove() {
+  draw();
+  if (isSolved(S.at, S.n)) finish();
+}
+
+// Arrow keys move the tile NEXT to the blank in that direction (arrow left = the tile right of the blank goes left)
+document.addEventListener("keydown", e => {
+  if (!S || $("play").hidden || S.done) return;
+  const n = S.n, r = Math.floor(S.blank / n), c = S.blank % n;
+  const from = { ArrowLeft: c < n - 1 ? S.blank + 1 : -1, ArrowRight: c > 0 ? S.blank - 1 : -1,
+                 ArrowUp: r < n - 1 ? S.blank + n : -1, ArrowDown: r > 0 ? S.blank - n : -1 }[e.key];
+  if (from === undefined) return;
+  e.preventDefault();
+  if (from < 0) return;
+  slide(from);
+  afterMove();
+});
+
+$("restart").onclick = () => start();
+$("stop").onclick = () => { clearInterval(S.timer); show("setup"); drawSetup(); };
+
+// ---------- Screen 3 ----------
+function finish() {
+  S.done = true;
+  clearInterval(S.timer);
+  draw();
+  $("board").classList.add("solved");
+  const time_s = Math.floor((Date.now() - S.startedAt) / 1000);
+  const prev = best(S.level);
+  // no right/wrong answers here: score/total stay 0, moves and time are the result
+  const attempt = { test: S.level, score: 0, total: 0, moves: S.moves, time_s, answers: [], finished_at: new Date().toISOString() };
+  history.unshift({ ...attempt, module: MODULE });
+  document.querySelector("#done .saveerr")?.remove();
+  saveAttempt(user.uid, MODULE, attempt).catch(e =>
+    $("resultText").insertAdjacentHTML("afterend", `<p class="saveerr">Score niet opgeslagen (${e.code || "fout"}).</p>`));
+  setTimeout(() => {
+    $("board").classList.remove("solved");
+    show("done");
+    $("resultText").textContent = `${LEVELS[S.level][0]} · ${S.moves} zetten · tijd ${fmt(time_s)}`;
+    $("record").hidden = prev !== null && S.moves >= prev;
+    $("record").textContent = prev === null ? "Eerste record!" : `Nieuw record! (was ${prev} zetten)`;
+  }, 1000);
+}
+$("again").onclick = () => start();
+$("change").onclick = () => { show("setup"); drawSetup(); };
+
+// Local tests only (never on the real site)
+if (location.hostname === "localhost") window.__schuif = () => S && { at: S.at, blank: S.blank, n: S.n };
+
+drawSetup();
+</script>
+</body>
+</html>

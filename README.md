@@ -13,7 +13,7 @@ Learning games and puzzles for kids, in Dutch: practice, puzzles and games.
 
 | Path | What it is |
 |---|---|
-| `index.html` | Home: one card per module |
+| `index.html` | Home in three groups: *Puzzel van de dag* (the daily puzzles, each with a "Vandaag x/y" label), *Oefenen* and *Denkspellen* |
 | `css/site.css` | Shared design (same worksheet style as the nl-oefenbank kids pages) |
 | `js/core.js` | Shared: Firebase login gate, groep (`groepNr`, `tablesFor`), save/load rounds, daily ranking (`postScore`, `loadBoard`), random, shuffle, animations |
 | `tafels/` | Multiplication tables: practice (10 sums) or 60 seconds against the clock. From groep 5 on, children only get the tables 3-9 (1, 2 and 10 are too easy); groep 1-4, unknown groep and adults get 1-10. Everyone also gets a harder level with the tables 11-15 (own row). A child without a groep is asked once (saved in the profile) |
@@ -24,6 +24,9 @@ Learning games and puzzles for kids, in Dutch: practice, puzzles and games.
 | `memory/` | Memory: land–hoofdstad, dier–jong, Engels–Nederlands, tafels (made fresh, by groep). 6/8/10 pairs. Saved: score = pairs, total = turns |
 | `snake/` | Snake that eats the right answer (tafels by groep, or plus/min to 100). Wrong = one heart less (3), wall or own tail = game over. Saved answers per sum |
 | `2048/` | Classic 2048 with sliding tiles, a short "how to play" (open on the first visit) and arrow buttons. The game in progress is kept in the browser per account. Saved: points, highest tile (score/total stay 0) |
+| `blokjes/` (`engine.js` + `index.html`) | Daily shape puzzle, same for everyone: drag pieces (3-5 squares) into a 4x4 / 5x5 / 6x6 frame. Pieces are cut from the frame, so there is always a solution. From normaal on they start turned (click = turn). Hint puts one piece in place |
+| `kriskras/` | Daily fill-in puzzle: put the listed words in the grid (same generator and word bank as the kruiswoord). Any way that fits counts as right. 2 / 1 / 1 letters given |
+| `schuifpuzzel/` | Sliding puzzle 3x3 / 4x4 / 5x5, shuffled with legal moves (always solvable). Tiles on their right square turn green. Record = fewest moves |
 
 ## Adding a module
 
