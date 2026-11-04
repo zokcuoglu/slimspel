@@ -30,7 +30,7 @@ const TEXT = {
   nl: { levels: { makkelijk: "Makkelijk · 4 letters", normaal: "Normaal · 5 letters", moeilijk: "Moeilijk · 6 letters" },
     title: "Woordle", intro: "Raad het geheime woord in 6 beurten. Typ een echt woord en druk op Enter. De kleuren helpen je:",
     legend: ["goede letter, goede plek", "letter zit erin, andere plek", "letter zit er niet in"],
-    daily: "Elke dag is er per niveau één nieuw woord, voor iedereen hetzelfde.", level: "Niveau",
+    daily: "Elke dag is er één nieuw woord van 5 letters, voor iedereen hetzelfde.", level: "Niveau",
     start: "Start", cont: "Verder spelen", back: "← Terug", other: "Ander niveau van vandaag",
     typeN: n => `Typ ${n} letters.`, unknown: "Dit woord ken ik niet. Probeer een ander woord.",
     todayWon: g => `Vandaag geraden in ${g} ${g > 1 ? "pogingen" : "poging"}. Morgen is er een nieuw woord!`,
@@ -49,7 +49,7 @@ const TEXT = {
   tr: { levels: { makkelijk: "Kolay · 4 harf", normaal: "Orta · 5 harf", moeilijk: "Zor · 6 harf" },
     title: "Woordle · Türkçe", intro: "Gizli kelimeyi 6 denemede bul. Gerçek bir kelime yaz ve Enter'a bas. Renkler sana yol gösterir:",
     legend: ["harf doğru, yeri doğru", "harf kelimede var, yeri farklı", "harf kelimede yok"],
-    daily: "Her gün her seviye için bir yeni kelime var, herkes için aynı.", level: "Seviye",
+    daily: "Her gün 5 harfli bir yeni kelime var, herkes için aynı.", level: "Seviye",
     start: "Başla", cont: "Devam et", back: "← Geri", other: "Bugünün başka bir seviyesi",
     typeN: n => `${n} harf yaz.`, unknown: "Bu kelime sözlükte yok. Başka bir kelime dene.",
     todayWon: g => `Bugün ${g}. denemede bildin. Yarın yeni kelime var!`, todayLost: "Bugün bilemedin. Yarın yeni kelime var!",
@@ -144,7 +144,9 @@ export async function mountWoordle(root, { lang = "nl", user, profile, api }) {
   const KEYS = LANG === "tr" ? ["ertyuıopğü", "asdfghjklşi", "zcvbnmöç"] : ["qwertyuiop", "asdfghjkl", "zxcvbnm"];
   const LETTER = LANG === "tr" ? /^[abcçdefgğhıijklmnoöprsştuüvyz]$/ : /^[a-z]$/; // Turkish has no q, w and x
   const lower = s => LANG === "tr" ? s.toLocaleLowerCase("tr") : s.toLowerCase();
-  const levels = profile.type === "child" ? ["makkelijk", "normaal"] : Object.keys(LEN);
+  // For now only 5 letters ("normaal"). To switch the other levels on again, add them here
+  // (old rule: children makkelijk + normaal, adults all three).
+  const levels = ["normaal"];
 
   // ---------- Markup ----------
   root.classList.add("wdl");
@@ -155,8 +157,8 @@ export async function mountWoordle(root, { lang = "nl", user, profile, api }) {
       <p class="sub">${esc(T.intro)}</p>
       <div class="legend">${["--good-c", "--near-c", "--miss-c"].map((c, i) => `<span><b style="background:var(${c})"></b>${esc(T.legend[i])}</span>`).join("")}</div>
       <p class="sub" style="margin-top:8px">${esc(T.daily)}</p>
-      <div class="lbl">${esc(T.level)}</div>
-      <div class="choice" data-r="levels"></div>
+      <div class="lbl"${levels.length > 1 ? "" : " hidden"}>${esc(T.level)}</div>
+      <div class="choice" data-r="levels"${levels.length > 1 ? "" : " hidden"}></div>
       <p class="today" data-r="today" hidden></p>
       <div style="margin-top:16px"><button class="bt pri" data-r="go"></button></div>
       <div class="grid2"><div class="pan" data-r="stats1"></div><div class="pan" data-r="rank1"></div></div>
@@ -227,8 +229,8 @@ export async function mountWoordle(root, { lang = "nl", user, profile, api }) {
 
   let history = [];
   try { history = await api.loadAttempts(user.uid, MODULE); } catch {}
-  let level = loadLocal(`woordle:${LANG}:level`, "makkelijk");
-  if (!levels.includes(level)) level = "makkelijk";
+  let level = loadLocal(`woordle:${LANG}:level`, levels[0]);
+  if (!levels.includes(level)) level = levels[0];
   let S = null;
   const playedToday = lv => history.find(h => h.test === lv && h.day === today());
   const progressKey = (day, lv) => `woordle:${LANG}:progress:${day}:${lv}`;
@@ -283,7 +285,7 @@ export async function mountWoordle(root, { lang = "nl", user, profile, api }) {
   }
 
   // ---------- Rankings ----------
-  let rankTab = "dag", rankLevel = "alle", plays = null;
+  let rankTab = "dag", rankLevel = levels.length > 1 ? "alle" : levels[0], plays = null;
   const weekStart = day => { const n = dayNr(day), dow = (new Date(n * 86400000).getUTCDay() + 6) % 7; return isoOf(n - dow); };
   async function loadPlays() {
     if (plays) return plays;
@@ -295,9 +297,10 @@ export async function mountWoordle(root, { lang = "nl", user, profile, api }) {
   async function drawRanking(box) {
     const el = $(box);
     const tabs = Object.entries(T.tabs).map(([k, t]) => `<button class="ch${k === rankTab ? " on" : ""}" data-tab="${k}">${esc(t)}</button>`).join("");
-    const lvs = [["alle", T.allLv], ...Object.keys(LEN).map(l => [l, T.levels[l].split(" · ")[1]])]
+    // Level chips only when there is more than one level to play
+    const lvs = levels.length < 2 ? "" : [["alle", T.allLv], ...levels.map(l => [l, T.levels[l].split(" · ")[1]])]
       .map(([k, t]) => `<button class="ch${k === rankLevel ? " on" : ""}" data-lv="${k}">${esc(t)}</button>`).join("");
-    el.innerHTML = `<h3>${esc(T.rank)}</h3><div class="tabs2">${tabs}</div><div class="tabs2">${lvs}</div><div data-t><p class="small">…</p></div>`;
+    el.innerHTML = `<h3>${esc(T.rank)}</h3><div class="tabs2">${tabs}</div>${lvs ? `<div class="tabs2">${lvs}</div>` : ""}<div data-t><p class="small">…</p></div>`;
     el.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { rankTab = b.dataset.tab; drawRanking(box); });
     el.querySelectorAll("[data-lv]").forEach(b => b.onclick = () => { rankLevel = b.dataset.lv; drawRanking(box); });
     const out = el.querySelector("[data-t]");

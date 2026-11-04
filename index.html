@@ -124,14 +124,14 @@ document.getElementById("user").innerHTML = userBox(user, profile);
 
 // How many daily puzzles there are per game today: children see 2 levels, adults 3; sudoku has 2 sizes per level
 const levels = profile.type === "child" ? 2 : 3;
-const perGame = { sudoku: 2 * levels, kruiswoord: levels, kriskras: levels, paspuzzel: levels, woordzoeker: levels, blokjes: levels, woordle: levels };
+const perGame = { sudoku: 2 * levels, kruiswoord: levels, kriskras: levels, paspuzzel: levels, woordzoeker: levels, blokjes: levels, woordle: 1 };   // Woordle: only 5 letters for now
 
 // Put a "today" label on each daily puzzle card: how many of today's puzzles he solved
 const day = today();
 let doneAll = 0, totalAll = 0;
 await Promise.all(Object.entries(perGame).map(async ([game, total]) => {
   let done = 0;
-  try { done = new Set((await loadAttempts(user.uid, "slimspel-" + game)).filter(a => a.day === day).map(a => a.test)).size; } catch {}
+  try { done = new Set((await loadAttempts(user.uid, "slimspel-" + game)).filter(a => a.day === day && (game !== "woordle" || a.test === "normaal")).map(a => a.test)).size; } catch {}
   done = Math.min(done, total);
   doneAll += done; totalAll += total;
   const card = document.querySelector(`[data-daily="${game}"]`);
