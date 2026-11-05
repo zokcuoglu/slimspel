@@ -31,7 +31,7 @@ const TEXT = {
     title: "Woordle", intro: "Raad het geheime woord in 6 beurten. Typ een echt woord en druk op Enter. De kleuren helpen je:",
     legend: ["goede letter, goede plek", "letter zit erin, andere plek", "letter zit er niet in"],
     daily: "Elke dag is er één nieuw woord van 5 letters, voor iedereen hetzelfde.", level: "Niveau",
-    start: "Start", cont: "Verder spelen", back: "← Terug", other: "Ander niveau van vandaag",
+    share: "Delen", copied: "Gekopieerd ✓", shareName: "Woordle", start: "Start", cont: "Verder spelen", back: "← Terug", other: "Ander niveau van vandaag",
     typeN: n => `Typ ${n} letters.`, unknown: "Dit woord ken ik niet. Probeer een ander woord.",
     todayWon: g => `Vandaag geraden in ${g} ${g > 1 ? "pogingen" : "poging"}. Morgen is er een nieuw woord!`,
     todayLost: "Vandaag niet geraden. Morgen is er een nieuw woord!",
@@ -50,7 +50,7 @@ const TEXT = {
     title: "Woordle · Türkçe", intro: "Gizli kelimeyi 6 denemede bul. Gerçek bir kelime yaz ve Enter'a bas. Renkler sana yol gösterir:",
     legend: ["harf doğru, yeri doğru", "harf kelimede var, yeri farklı", "harf kelimede yok"],
     daily: "Her gün 5 harfli bir yeni kelime var, herkes için aynı.", level: "Seviye",
-    start: "Başla", cont: "Devam et", back: "← Geri", other: "Bugünün başka bir seviyesi",
+    share: "Paylaş", copied: "Kopyalandı ✓", shareName: "Woordle TR", start: "Başla", cont: "Devam et", back: "← Geri", other: "Bugünün başka bir seviyesi",
     typeN: n => `${n} harf yaz.`, unknown: "Bu kelime sözlükte yok. Başka bir kelime dene.",
     todayWon: g => `Bugün ${g}. denemede bildin. Yarın yeni kelime var!`, todayLost: "Bugün bilemedin. Yarın yeni kelime var!",
     win: g => g === 1 ? "İlk denemede!" : g <= 3 ? "Harika!" : "Bildin!", lost: "Olmadı…",
@@ -134,7 +134,7 @@ const CSS = `
 .wdl [hidden]{display:none!important}`;
 
 /** Put a Woordle game in `root`. Returns nothing; the game runs by itself. */
-export async function mountWoordle(root, { lang = "nl", user, profile, api }) {
+export async function mountWoordle(root, { lang = "nl", user, profile, api, shareUrl = "" }) {
   if (!document.getElementById("wdl-css")) {
     const st = document.createElement("style"); st.id = "wdl-css"; st.textContent = CSS; document.head.appendChild(st);
   }
@@ -160,6 +160,7 @@ export async function mountWoordle(root, { lang = "nl", user, profile, api }) {
       <div class="lbl"${levels.length > 1 ? "" : " hidden"}>${esc(T.level)}</div>
       <div class="choice" data-r="levels"${levels.length > 1 ? "" : " hidden"}></div>
       <p class="today" data-r="today" hidden></p>
+      <button class="bt" data-r="share1" hidden>📤 ${esc(T.share)}</button>
       <div style="margin-top:16px"><button class="bt pri" data-r="go"></button></div>
       <div class="grid2"><div class="pan" data-r="stats1"></div><div class="pan" data-r="rank1"></div></div>
     </section>
@@ -174,9 +175,10 @@ export async function mountWoordle(root, { lang = "nl", user, profile, api }) {
         <div class="big" data-r="result"></div>
         <p class="sub" data-r="resultText"></p>
         <span class="record" data-r="record" hidden></span>
+        <div style="margin-top:10px"><button class="bt" data-r="share2">📤 ${esc(T.share)}</button></div>
         <div class="info" data-r="info"></div>
       </div>
-      <div style="margin-top:14px"><button class="bt pri" data-r="change">${esc(T.other)}</button></div>
+      <div style="margin-top:14px"><button class="bt pri" data-r="change">${esc(levels.length > 1 ? T.other : T.back)}</button></div>
       <div class="grid2"><div class="pan" data-r="stats2"></div><div class="pan" data-r="rank2"></div></div>
     </section>
     <p class="credit">${esc(T.credit)}</p>`;
@@ -246,6 +248,8 @@ export async function mountWoordle(root, { lang = "nl", user, profile, api }) {
     const done = playedToday(level);
     $("today").hidden = !done;
     if (done) $("today").textContent = done.score ? T.todayWon(done.guesses) : T.todayLost;
+    $("share1").hidden = !(done && done.word && done.answers?.[0]?.chosen);
+    $("share1").onclick = () => share($("share1"), done);
     $("go").disabled = !!done;
     $("go").textContent = loadLocal(progressKey(today(), level), null) ? T.cont : T.start;
     drawStats("stats1");
@@ -410,6 +414,28 @@ export async function mountWoordle(root, { lang = "nl", user, profile, api }) {
   $("stop").onclick = () => { saveProgress(); clearInterval(S.timer); show("setup"); drawSetup(); };
   $("change").onclick = () => { show("setup"); drawSetup(); };
 
+  // ---------- Share the result as coloured squares (no letters, so the word stays secret) + a link ----------
+  // Phone: the share menu (WhatsApp etc.); computer: copied to the clipboard.
+  const link = shareUrl || (location.origin + location.pathname + (LANG === "tr" ? "?taal=tr" : ""));
+  function shareText(att) {
+    const guesses = att.answers[0].chosen.split(","), date = new Date(att.day + "T12:00:00Z")
+      .toLocaleDateString(LANG === "tr" ? "tr-TR" : "nl-NL", { day: "numeric", month: "long", timeZone: "UTC" });
+    const rows = guesses.map(g => score(g, att.word).map(c => ({ good: "🟩", near: "🟨" }[c] || "⬜")).join(""));
+    return `${T.shareName} · ${date} · ${att.score ? guesses.length : "X"}/${TRIES}\n${rows.join("\n")}\n${link}`;
+  }
+  async function share(btn, att) {
+    const text = shareText(att);
+    if (navigator.share && matchMedia("(pointer: coarse)").matches) {
+      try { await navigator.share({ text }); return; } catch (e) { if (e.name === "AbortError") return; }
+    }
+    try { await navigator.clipboard.writeText(text); }
+    catch {   // older browsers: copy through a hidden text box
+      const ta = Object.assign(document.createElement("textarea"), { value: text }); document.body.append(ta); ta.select();
+      try { document.execCommand("copy"); } catch {} ta.remove();
+    }
+    const old = btn.textContent; btn.textContent = T.copied; setTimeout(() => btn.textContent = old, 2000);
+  }
+
   // ---------- Screen 3 ----------
   function finish(won) {
     S.done = true;
@@ -433,6 +459,7 @@ export async function mountWoordle(root, { lang = "nl", user, profile, api }) {
     $("resultText").textContent = won ? T.resWon(T.levels[S.level], g, fmt(time_s)) : T.resLost(T.levels[S.level]);
     $("record").hidden = !won || (prev !== null && g >= prev);
     $("record").textContent = T.rec(prev);
+    $("share2").onclick = () => share($("share2"), attempt);
     wordInfo(S.answer);
     drawStats("stats2", won ? g : 0);
     posted.then(() => { plays = null; drawRanking("rank2"); });

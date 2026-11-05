@@ -14,6 +14,7 @@ Learning games and puzzles for kids, in Dutch: practice, puzzles and games.
 | Path | What it is |
 |---|---|
 | `index.html` | Home in three groups: *Puzzel van de dag* (the daily puzzles, each with a "Vandaag x/y" label), *Oefenen* and *Denkspellen* |
+| `js/speeltijd.js` | Play time for child accounts: 15 minutes a day (plus extra minutes from the nl-oefenbank admin page), open on weekdays 13:00-19:30 and weekends 09:00-19:30. The clock only runs while he is active (page on screen, input in the last minute). Kept in `users/{uid}/speeltijd/{day}`. Also used by the "Günün oyunları" tab of nl-oefenbank |
 | `css/site.css` | Shared design (same worksheet style as the nl-oefenbank kids pages) |
 | `js/core.js` | Shared: Firebase login gate, groep (`groepNr`, `tablesFor`), save/load rounds, daily ranking (`postScore`, `loadBoard`), random, shuffle, animations |
 | `tafels/` | Multiplication tables: practice (10 sums) or 60 seconds against the clock. From groep 5 on, children only get the tables 3-9 (1, 2 and 10 are too easy); groep 1-4, unknown groep and adults get 1-10. Everyone also gets a harder level with the tables 11-15 (own row). A child without a groep is asked once (saved in the profile) |

@@ -196,6 +196,8 @@ export function gate({ seen = "" } = {}) {
         }
         updateProfile(user.uid, { ...fresh, ...(seen ? { seen: { [seen]: fresh.last_active } } : {}) }).catch(() => {});
         closeOverlay();
+        // Children: 15 minutes a day, only at set hours (js/speeltijd.js). Loaded on its own so a problem there never stops the page.
+        if (profile.type === "child") import("./speeltijd.js?v=1").then(m => m.startPlaytime({ db, user, profile, lang: "nl" })).catch(() => {});
         resolve({ user, profile });
       } catch (e) {
         overlay(`<h2>Er ging iets mis</h2><p class="err">${esc(e.code || e.message || e)}</p>
