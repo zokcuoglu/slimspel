@@ -87,8 +87,10 @@ function build(pool, cfg, rnd) {
  * Returns { w, h, solution: [letter or ""], words: [{ w, c, e, dir, num, cells }] }
  * Cell numbers are for the cropped grid (w columns, h rows).
  */
+// `level` is a name from LEVEL, or an own settings object { count, maxLen, size, emoji } (used by the
+// NT2 crossword of NL Oefenbank). Passing an object does not change the Slimspel daily puzzles.
 export function makePuzzle(level, bank, rnd = Math.random) {
-  const cfg = LEVEL[level];
+  const cfg = typeof level === "string" ? LEVEL[level] : level;
   const pool = bank.words.filter(x => x.w.length >= 3 && x.w.length <= cfg.maxLen && (!cfg.emoji || x.e));
   let result = null;
   for (let tries = 0; tries < 50 && !result; tries++) result = build(shuffled(pool, rnd), cfg, rnd);
