@@ -172,6 +172,7 @@ function start() {
   $("what").textContent = LEVELS[level];
   $("tip").textContent = S.P.pieces.some(p => p.turn) ? "Sleep een blokje naar het vak. Klik op een blokje om het te draaien." : "Sleep een blokje naar het vak.";
   show("play");
+  hintLabel();
   sizeSquares();
   draw();
 }
@@ -292,8 +293,15 @@ addEventListener("pointerup", e => {
 
 // ---------- Buttons ----------
 // Hint: one piece jumps to its place (turned right); pieces in the way go back to the tray
+// At most 1 hint per puzzle: with unlimited hints the daily puzzle (and the ranking) means nothing
+const MAX_HINTS = 1;
+function hintLabel() {
+  const left = Math.max(0, MAX_HINTS - S.hintsUsed);
+  $("hint").textContent = `Hint (${left})`;
+  $("hint").disabled = left === 0;
+}
 $("hint").onclick = () => {
-  if (!S || S.done) return;
+  if (!S || S.done || S.hintsUsed >= MAX_HINTS) return;
   const k = S.P.pieces.findIndex((p, j) => !S.hinted.has(j) && !(S.pieces[j].rot === 0 && S.pieces[j].at?.r === p.home.r && S.pieces[j].at?.c === p.home.c));
   if (k < 0) return;
   const p = S.P.pieces[k];
@@ -303,7 +311,7 @@ $("hint").onclick = () => {
   for (const i of target) if (occ[i] !== -1 && !S.hinted.has(occ[i])) S.pieces[occ[i]].at = null;
   S.pieces[k].at = { ...p.home };
   S.hinted.add(k);
-  S.hintsUsed++;
+  S.hintsUsed++; hintLabel();
   draw(); saveProgress(); checkDone();
 };
 $("reset").onclick = () => { S.pieces.forEach((p, k) => { if (!S.hinted.has(k)) p.at = null; }); draw(); saveProgress(); };

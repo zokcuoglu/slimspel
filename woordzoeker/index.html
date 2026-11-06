@@ -177,6 +177,7 @@ function start() {
   $("letters").style.setProperty("--n", P.size);
   $("letters").innerHTML = P.grid.map((ch, i) => `<div class="lt" data-i="${i}">${ch}</div>`).join("");
   show("play");
+  hintLabel();
   draw();
 }
 const played = () => S.elapsed + Math.floor((Date.now() - S.resumedAt) / 1000);
@@ -245,13 +246,20 @@ addEventListener("pointerup", () => {
 });
 
 // Hint: the first letter of a word he has not found yet blinks
+// At most 2 hints per puzzle: with unlimited hints the daily puzzle (and the ranking) means nothing
+const MAX_HINTS = 2;
+function hintLabel() {
+  const left = Math.max(0, MAX_HINTS - S.hintsUsed);
+  $("hint").textContent = `Hint (${left})`;
+  $("hint").disabled = left === 0;
+}
 $("hint").onclick = () => {
-  if (!S || S.done) return;
+  if (!S || S.done || S.hintsUsed >= MAX_HINTS) return;
   const open = S.P.words.map((w, k) => k).filter(k => !S.found.includes(k));
   if (!open.length) return;
-  const w = S.P.words[open[0]];
+  const w = S.P.words[open[S.hintsUsed % open.length]];   // each hint shows another word, not the same one again
   flash($("letters").children[w.cells[0]], "blink");
-  S.hintsUsed++;
+  S.hintsUsed++; hintLabel();
   saveProgress();
 };
 $("stop").onclick = () => { saveProgress(); clearInterval(S.timer); show("setup"); drawSetup(); };

@@ -205,6 +205,7 @@ function start() {
   $("cluesV").innerHTML = P.words.map((x, k) => x.dir === "V" ? li(x, k) : "").join("");
   document.querySelectorAll(".clues li").forEach(el => el.onclick = () => { S.word = Number(el.dataset.k); S.cell = firstOpen(S.word); draw(); focusKbd(); });
   show("play");
+  hintLabel();
   draw();
   focusKbd();
 }
@@ -328,15 +329,22 @@ document.addEventListener("keydown", e => {
 });
 
 // Hint: fill the selected cell if it is wrong or empty, else the first wrong cell of the active word, else anywhere
+// At most 3 hints per puzzle: with unlimited hints the daily puzzle (and the ranking) means nothing
+const MAX_HINTS = 3;
+function hintLabel() {
+  const left = Math.max(0, MAX_HINTS - S.hintsUsed);
+  $("hint").textContent = `Hint (${left})`;
+  $("hint").disabled = left === 0;
+}
 $("hint").onclick = () => {
-  if (!S || S.done) return;
+  if (!S || S.done || S.hintsUsed >= MAX_HINTS) return;
   const wrong = i => S.grid[i] !== S.P.solution[i];
   let i = wrong(S.cell) ? S.cell : S.P.words[S.word].cells.find(wrong);
   if (i === undefined) i = S.P.solution.findIndex((ch, j) => ch && wrong(j));
   if (i < 0) return;
   S.grid[i] = S.P.solution[i];
   S.hinted.add(i);
-  S.hintsUsed++;
+  S.hintsUsed++; hintLabel();
   S.cell = i;
   afterChange();
   focusKbd();
