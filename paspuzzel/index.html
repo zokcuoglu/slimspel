@@ -213,7 +213,8 @@ function saveProgress() {
 addEventListener("pagehide", saveProgress);
 document.addEventListener("visibilitychange", () => { if (document.hidden) saveProgress(); });
 
-const locked = i => S.given.has(i) || S.hinted.has(i);
+// Locked: given letters, hint letters and letters of a word that is already green (found) - they can no longer change
+const locked = i => S.given.has(i) || S.hinted.has(i) || [...(S.okSlots || [])].some(k => S.P.words[k].cells.includes(i));
 const wordsAt = i => S.P.words.map((w, k) => k).filter(k => S.P.words[k].cells.includes(i));
 const slotText = k => S.P.words[k].cells.map(i => S.grid[i] || "").join("");
 function firstOpen(k) { const cells = S.P.words[k].cells; return cells.find(i => !S.grid?.[i]) ?? cells[0]; }
@@ -268,15 +269,27 @@ function draw() {
 
 function type(ch) {
   if (!S || S.done) return;
+  const cells = S.P.words[S.word].cells;
+  let pos = cells.indexOf(S.cell);
+  // Typing on a locked cell writes into the next open cell of the word instead
+  while (locked(S.cell) && pos < cells.length - 1) S.cell = cells[++pos];
   if (!locked(S.cell)) S.grid[S.cell] = ch;
-  const cells = S.P.words[S.word].cells, pos = cells.indexOf(S.cell);
-  if (pos < cells.length - 1) S.cell = cells[pos + 1];
-  afterChange(pos === cells.length - 1); // jump to the next word only after the last letter
+  // Move on to the next open cell (locked ones are skipped)
+  let next = pos + 1;
+  while (next < cells.length && locked(cells[next])) next++;
+  if (next < cells.length) S.cell = cells[next];
+  afterChange(next >= cells.length);   // jump to the next word only after its LAST open letter
 }
 function backspace() {
   if (!S || S.done) return;
-  const cells = S.P.words[S.word].cells, pos = cells.indexOf(S.cell);
-  if ((!S.grid[S.cell] || locked(S.cell)) && pos > 0) S.cell = cells[pos - 1];
+  const cells = S.P.words[S.word].cells;
+  let pos = cells.indexOf(S.cell);
+  // Empty or locked cell: step back to the previous cell that can still be erased
+  if (!S.grid[S.cell] || locked(S.cell)) {
+    let prev = pos - 1;
+    while (prev >= 0 && locked(cells[prev])) prev--;
+    if (prev >= 0) S.cell = cells[prev];
+  }
   if (!locked(S.cell)) S.grid[S.cell] = "";
   afterChange();
 }
