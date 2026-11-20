@@ -2,46 +2,11 @@
 <html lang="nl">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Woordle · Slimspel</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Andika:wght@400;700&family=Fredoka:wght@500;600;700&display=swap">
-<link rel="stylesheet" href="../css/site.css">
+<title>Slimspel is verhuisd</title>
+<!-- Slimspel moved into the nl-oefenbank repo (Nov 2026). This page only sends old links and bookmarks there,
+     keeping ?query and #hash (e.g. woordle/?taal=tr). Fallback without JavaScript: the meta refresh. -->
+<meta http-equiv="refresh" content="0; url=https://zokcuoglu.github.io/nl-oefenbank/slimspel/woordle/">
+<script>location.replace("https://zokcuoglu.github.io/nl-oefenbank/slimspel/woordle/" + location.search + location.hash);</script>
 </head>
-<body>
-<!-- Covers the page until js/core.js has checked the login (see index.html of the site) -->
-<div id="gate"><div class="gc"><p>Laden…</p></div></div>
-<script>
-setTimeout(() => {
-  if (window.__slimReady) return;
-  document.querySelector("#gate .gc").innerHTML =
-    "<h2>Laden lukt niet</h2><p>Ververs de pagina. Gaat het nog steeds mis? Vraag het aan Zana.</p>";
-}, 10000);
-</script>
-<main class="wrap">
-  <div class="top">
-    <a class="back" id="back" href="../">← Slimspel</a>
-    <span id="user"></span>
-  </div>
-  <div id="game"></div>
-</main>
-
-<script type="module">
-// The game itself is in game.js, shared with the "Günün oyunları" tab of NL Oefenbank.
-// This page only logs in and hands over Slimspel's own save/load functions.
-// ?taal=tr = the Turkish Woordle (old links from NL Oefenbank still work).
-import { gate, userBox, saveAttempt, loadAttempts, saveWoordlePlay, loadWoordlePlays } from "../js/core.js";
-import { mountWoordle } from "./game.js?v=2026-11-05"; // raise ?v= after each change to game.js (browser cache)
-
-const lang = new URLSearchParams(location.search).get("taal") === "tr" ? "tr" : "nl";
-if (lang === "tr") {
-  document.title = "Woordle (Türkçe)";
-  document.getElementById("back").href = "../../nl-oefenbank/#oyunlar";
-  document.getElementById("back").textContent = "← NL Oefenbank";
-}
-const { user, profile } = await gate({ seen: lang === "tr" ? "slimspel-woordle-tr" : "slimspel-woordle" });
-document.getElementById("user").innerHTML = userBox(user, profile);
-await mountWoordle(document.getElementById("game"), { lang, user, profile, api: { saveAttempt, loadAttempts, saveWoordlePlay, loadWoordlePlays } });
-</script>
-</body>
+<body><p>Slimspel is verhuisd: <a href="https://zokcuoglu.github.io/nl-oefenbank/slimspel/woordle/">ga naar de nieuwe pagina</a>.</p></body>
 </html>
